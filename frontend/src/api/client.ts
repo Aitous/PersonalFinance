@@ -20,8 +20,8 @@ export const getOverview = () =>
 export const getCategorySummary = () =>
   api.get("/analysis/category-summary").then((r) => r.data);
 
-export const getSavingsTips = () =>
-  api.post("/analysis/savings-tips").then((r) => r.data);
+export const getSavingsTips = (provider?: string) =>
+  api.post("/analysis/savings-tips", { provider }).then((r) => r.data);
 
 export const triggerSync = (bank: string, since: string) =>
   api.post("/sync", { bank, since }).then((r) => r.data);

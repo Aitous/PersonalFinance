@@ -29,12 +29,6 @@ class BaseScraper(ABC):
         if not self._is_allowed(url):
             raise ValueError(f"Navigation to {url} blocked — not in allowed domains {self.ALLOWED_DOMAINS}")
 
-    async def _block_mutations_after_login(self, route, request):
-        if request.method != "GET":
-            await route.abort()
-        else:
-            await route.continue_()
-
     async def _setup_context(self) -> None:
         self._playwright = await async_playwright().start()
         self._browser = await self._playwright.chromium.launch(headless=True)
@@ -50,7 +44,19 @@ class BaseScraper(ABC):
         self._page = await self._context.new_page()
 
     async def _enable_mutation_blocking(self) -> None:
-        await self._context.route("**/*", self._block_mutations_after_login)
+        # Replaces the allowlist-only handler with one that enforces both
+        # the allowlist AND blocks non-GET requests. A second context.route()
+        # call would shadow the first handler entirely in Playwright.
+        async def allowlist_and_block_mutations(route, request):
+            if not self._is_allowed(request.url):
+                await route.abort()
+            elif request.method != "GET":
+                await route.abort()
+            else:
+                await route.continue_()
+
+        await self._context.unroute("**/*")
+        await self._context.route("**/*", allowlist_and_block_mutations)
 
     async def _teardown(self) -> None:
         if self._context:

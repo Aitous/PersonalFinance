@@ -20,14 +20,17 @@ export function Overview() {
 
   const handleSync = async () => {
     setSyncing(true);
-    const since = new Date();
-    since.setMonth(since.getMonth() - 3);
-    const sinceStr = since.toISOString().split("T")[0];
-    const activeBanks = Object.entries(banks).filter(([, v]) => v).map(([k]) => k);
-    await Promise.all(activeBanks.map((bank) => triggerSync(bank, sinceStr)));
-    const fresh = await getOverview();
-    setData(fresh);
-    setSyncing(false);
+    try {
+      const since = new Date();
+      since.setMonth(since.getMonth() - 3);
+      const sinceStr = since.toISOString().split("T")[0];
+      const activeBanks = Object.entries(banks).filter(([, v]) => v).map(([k]) => k);
+      await Promise.all(activeBanks.map((bank) => triggerSync(bank, sinceStr)));
+      const fresh = await getOverview();
+      setData(fresh);
+    } finally {
+      setSyncing(false);
+    }
   };
 
   if (!data) return <p>Loading...</p>;

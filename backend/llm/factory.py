@@ -8,9 +8,9 @@ from backend.llm.gemini_provider import GeminiProvider
 
 CONFIG_PATH = Path(__file__).parent.parent.parent / "config.json"
 
-def get_llm_provider():
+def get_llm_provider(provider_override: "str | None" = None):
     config = json.loads(CONFIG_PATH.read_text())
-    provider_name = config.get("llm_provider", "claude")
+    provider_name = provider_override or config.get("llm_provider", "claude")
 
     if provider_name == "claude":
         api_key = credentials_store.get_llm_key("claude")

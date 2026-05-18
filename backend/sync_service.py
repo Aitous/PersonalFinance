@@ -43,6 +43,11 @@ class SyncService:
         finally:
             if csv_path and csv_path.exists():
                 csv_path.unlink()
+            if csv_path and csv_path.parent.exists():
+                try:
+                    csv_path.parent.rmdir()
+                except OSError:
+                    pass
 
         new_txs = []
         for tx in transactions:

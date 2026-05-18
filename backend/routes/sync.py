@@ -13,7 +13,8 @@ class SyncRequest(BaseModel):
     since: date
 
 @router.post("/sync")
-async def trigger_sync(req: SyncRequest):
+def trigger_sync(req: SyncRequest):
+    import asyncio
     username = credentials_store.get_bank_credential(req.bank, "username")
     password = credentials_store.get_bank_credential(req.bank, "password")
     if not username or not password:
@@ -21,5 +22,5 @@ async def trigger_sync(req: SyncRequest):
 
     with get_session() as session:
         service = SyncService(session=session, llm=get_llm_provider())
-        result = await service.sync_bank(req.bank, since=req.since, username=username, password=password)
+        result = asyncio.run(service.sync_bank(req.bank, since=req.since, username=username, password=password))
     return result

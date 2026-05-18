@@ -1,6 +1,8 @@
 from collections import defaultdict
 from datetime import date, timedelta
+from typing import Optional
 from fastapi import APIRouter
+from pydantic import BaseModel
 from sqlalchemy import select
 from backend.db.database import get_session
 from backend.db.models import Transaction
@@ -47,14 +49,17 @@ def get_category_summary():
             for cat in totals
         }
 
+class SavingsTipsRequest(BaseModel):
+    provider: Optional[str] = None
+
 @router.post("/analysis/savings-tips")
-def get_savings_tips():
+def get_savings_tips(body: SavingsTipsRequest = SavingsTipsRequest()):
     summary = get_category_summary()
     period_start = (date.today() - timedelta(days=90)).strftime("%b %Y")
     period_end = date.today().strftime("%b %Y")
     period = f"{period_start}–{period_end}"
 
-    llm = get_llm_provider()
+    llm = get_llm_provider(provider_override=body.provider)
     advisor = SavingsAdvisor(llm=llm)
     tips = advisor.get_tips(summary, period=period)
     return {"tips": tips, "period": period}

@@ -12,7 +12,7 @@ export function SavingsTips() {
   const handleGenerate = async () => {
     setLoading(true);
     try {
-      const result = await getSavingsTips();
+      const result = await getSavingsTips(provider);
       setTips(result.tips);
       setPeriod(result.period);
     } finally {
