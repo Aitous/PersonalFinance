@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+
+# Database
+finance.db
+
+# Superpowers
+.superpowers/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
+# Environment
+.env
