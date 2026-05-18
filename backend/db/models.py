@@ -33,7 +33,7 @@ class Sync(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     source = Column(String, nullable=False)
-    synced_at = Column(String, nullable=False, default=lambda: datetime.utcnow().isoformat())
+    synced_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     from_date = Column(Date, nullable=False)
     to_date = Column(Date, nullable=False)
     tx_count = Column(Integer, nullable=False)

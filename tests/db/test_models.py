@@ -1,5 +1,5 @@
 import pytest
-from datetime import date
+from datetime import date, datetime
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from backend.db.models import Base, Transaction, Subscription, Sync
@@ -44,7 +44,7 @@ def test_create_subscription(db):
 def test_create_sync(db):
     sync = Sync(
         source="chase",
-        synced_at="2025-05-01T10:00:00",
+        synced_at=datetime(2025, 5, 1, 10, 0, 0),
         from_date=date(2025, 1, 1),
         to_date=date(2025, 5, 1),
         tx_count=42,
