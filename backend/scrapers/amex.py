@@ -4,13 +4,18 @@ from pathlib import Path
 from backend.scrapers.base import BaseScraper
 
 class AmexScraper(BaseScraper):
-    ALLOWED_DOMAINS = ["americanexpress.com", "www.americanexpress.com", "global.americanexpress.com"]
+    ALLOWED_DOMAINS = [
+        "americanexpress.com", "www.americanexpress.com", "global.americanexpress.com",
+        "apigw.americanexpress.com", "functions.americanexpress.com",
+        "identity-mirror.americanexpress.com", "identitymirroruplifthydra.americanexpress.com",
+        "omns.americanexpress.com", "iwmapapi.americanexpress.com",
+    ]
     SOURCE = "amex"
     LOGIN_URL = "https://www.americanexpress.com/en-us/account/login"
 
     async def login(self) -> None:
-        await self._page.goto(self.LOGIN_URL)
-        await self._page.wait_for_selector("#eliloUserID", timeout=15000)
+        await self._page.goto(self.LOGIN_URL, wait_until="domcontentloaded")
+        await self._page.wait_for_selector("#eliloUserID", timeout=20000)
         await self._page.fill("#eliloUserID", self._username)
         await self._page.fill("#eliloPassword", self._password)
         await self._page.click("#loginSubmit")

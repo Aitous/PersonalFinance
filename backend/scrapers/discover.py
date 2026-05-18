@@ -9,11 +9,11 @@ class DiscoverScraper(BaseScraper):
     LOGIN_URL = "https://portal.discover.com/customersvcs/universalLogin/ac_main"
 
     async def login(self) -> None:
-        await self._page.goto(self.LOGIN_URL)
-        await self._page.wait_for_selector("#userid", timeout=15000)
+        await self._page.goto(self.LOGIN_URL, wait_until="domcontentloaded")
+        await self._page.wait_for_selector("#userid", timeout=20000)
         await self._page.fill("#userid", self._username)
         await self._page.fill("#password", self._password)
-        await self._page.click("#loginButton")
+        await self._page.click("#log-in-button")
         await self._page.wait_for_url("**/cardmembersvcs/**", timeout=30000)
 
     async def download_transactions(self, since: date) -> Path:

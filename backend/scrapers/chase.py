@@ -4,16 +4,19 @@ from pathlib import Path
 from backend.scrapers.base import BaseScraper
 
 class ChaseScraper(BaseScraper):
-    ALLOWED_DOMAINS = ["chase.com", "www.chase.com"]
+    ALLOWED_DOMAINS = [
+        "chase.com", "www.chase.com", "static.chasecdn.com",
+        "asset.chase.com", "securej.chase.com", "sites.chase.com",
+        "analytics.chase.com", "reco.chase.com",
+    ]
     SOURCE = "chase"
     LOGIN_URL = "https://www.chase.com"
 
     async def login(self) -> None:
-        await self._page.goto(self.LOGIN_URL)
-        await self._page.wait_for_selector("#userId-input", timeout=15000)
-        await self._page.fill("#userId-input", self._username)
-        await self._page.click("#password-input")
-        await self._page.fill("#password-input", self._password)
+        await self._page.goto(self.LOGIN_URL, wait_until="domcontentloaded")
+        await self._page.wait_for_selector("#userId-text-input-field", timeout=20000)
+        await self._page.fill("#userId-text-input-field", self._username)
+        await self._page.fill("#password-text-input-field", self._password)
         await self._page.click("#signin-button")
         await self._page.wait_for_url("**/dashboard/**", timeout=30000)
 
