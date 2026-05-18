@@ -13,10 +13,10 @@ class BaseScraper(ABC):
     def __init__(self, username: str, password: str):
         self._username = username
         self._password = password
+        self._playwright = None
         self._browser: Browser = None
         self._context: BrowserContext = None
         self._page: Page = None
-        self._logged_in = False
 
     def _is_allowed(self, url: str) -> bool:
         hostname = urlparse(url).hostname or ""
@@ -36,8 +36,8 @@ class BaseScraper(ABC):
             await route.continue_()
 
     async def _setup_context(self) -> None:
-        playwright = await async_playwright().start()
-        self._browser = await playwright.chromium.launch(headless=True)
+        self._playwright = await async_playwright().start()
+        self._browser = await self._playwright.chromium.launch(headless=True)
         self._context = await self._browser.new_context(accept_downloads=True)
 
         async def enforce_allowlist(route, request):
@@ -55,8 +55,13 @@ class BaseScraper(ABC):
     async def _teardown(self) -> None:
         if self._context:
             await self._context.close()
+            self._context = None
         if self._browser:
             await self._browser.close()
+            self._browser = None
+        if self._playwright:
+            await self._playwright.stop()
+            self._playwright = None
 
     @abstractmethod
     async def login(self) -> None: ...
@@ -68,10 +73,9 @@ class BaseScraper(ABC):
     async def logout(self) -> None: ...
 
     async def sync(self, since: date) -> Path:
-        await self._setup_context()
         try:
+            await self._setup_context()
             await self.login()
-            self._logged_in = True
             await self._enable_mutation_blocking()
             download_path = await self.download_transactions(since)
             await self.logout()
