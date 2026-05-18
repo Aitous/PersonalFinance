@@ -5,7 +5,7 @@ from backend.scrapers.base import BaseScraper
 
 class ChaseScraper(BaseScraper):
     ALLOWED_DOMAINS = [
-        "chase.com", "www.chase.com", "static.chasecdn.com",
+        "chase.com", "www.chase.com", "secure.chase.com", "static.chasecdn.com",
         "asset.chase.com", "securej.chase.com", "sites.chase.com",
         "analytics.chase.com", "reco.chase.com",
     ]

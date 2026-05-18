@@ -9,6 +9,7 @@ class AmexScraper(BaseScraper):
         "apigw.americanexpress.com", "functions.americanexpress.com",
         "identity-mirror.americanexpress.com", "identitymirroruplifthydra.americanexpress.com",
         "omns.americanexpress.com", "iwmapapi.americanexpress.com",
+        "aexp-static.com", "www.aexp-static.com",
     ]
     SOURCE = "amex"
     LOGIN_URL = "https://www.americanexpress.com/en-us/account/login"
