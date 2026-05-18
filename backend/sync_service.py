@@ -13,12 +13,6 @@ from backend.scrapers.discover import DiscoverScraper
 from backend.scrapers.amex import AmexScraper
 from backend.llm.base import LLMProvider
 
-SCRAPER_MAP = {
-    "chase": ChaseScraper,
-    "discover": DiscoverScraper,
-    "amex": AmexScraper,
-}
-
 class SyncService:
     def __init__(self, session: Session, llm: LLMProvider):
         self._session = session
@@ -33,12 +27,14 @@ class SyncService:
         username: str,
         password: str,
     ) -> dict:
-        import backend.sync_service as _self_module
-        scraper_cls = {
-            "chase": _self_module.ChaseScraper,
-            "discover": _self_module.DiscoverScraper,
-            "amex": _self_module.AmexScraper,
-        }[bank]
+        scraper_map = {
+            "chase": ChaseScraper,
+            "discover": DiscoverScraper,
+            "amex": AmexScraper,
+        }
+        if bank not in scraper_map:
+            raise ValueError(f"Unknown bank: {bank}")
+        scraper_cls = scraper_map[bank]
         scraper = scraper_cls(username=username, password=password)
 
         csv_path = await scraper.sync(since=since)
