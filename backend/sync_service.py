@@ -1,17 +1,17 @@
-import json
 from datetime import date, datetime, timezone
-from pathlib import Path
 from typing import Literal
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+
 from backend.db.models import Subscription, Sync, Transaction
-from backend.parsers.csv_parser import parse_csv
+from backend.ofx.client import download_transactions
 from backend.analysis.categorizer import Categorizer
 from backend.analysis.subscription_detector import SubscriptionDetector
-from backend.scrapers.chase import ChaseScraper
-from backend.scrapers.discover import DiscoverScraper
-from backend.scrapers.amex import AmexScraper
 from backend.llm.base import LLMProvider
+
+SUPPORTED_BANKS = {"chase", "discover", "amex"}
+
 
 class SyncService:
     def __init__(self, session: Session, llm: LLMProvider):
@@ -20,34 +20,17 @@ class SyncService:
         self._categorizer = Categorizer(llm=llm)
         self._sub_detector = SubscriptionDetector()
 
-    async def sync_bank(
+    def sync_bank(
         self,
         bank: Literal["chase", "discover", "amex"],
         since: date,
         username: str,
         password: str,
     ) -> dict:
-        scraper_map = {
-            "chase": ChaseScraper,
-            "discover": DiscoverScraper,
-            "amex": AmexScraper,
-        }
-        if bank not in scraper_map:
+        if bank not in SUPPORTED_BANKS:
             raise ValueError(f"Unknown bank: {bank}")
-        scraper_cls = scraper_map[bank]
-        scraper = scraper_cls(username=username, password=password)
 
-        csv_path = await scraper.sync(since=since)
-        try:
-            transactions = parse_csv(csv_path, source=bank)
-        finally:
-            if csv_path and csv_path.exists():
-                csv_path.unlink()
-            if csv_path and csv_path.parent.exists():
-                try:
-                    csv_path.parent.rmdir()
-                except OSError:
-                    pass
+        transactions = download_transactions(bank, username, password, since)
 
         new_txs = []
         for tx in transactions:
