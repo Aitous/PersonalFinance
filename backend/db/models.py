@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from sqlalchemy import Boolean, Column, Date, DateTime, Float, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase
 
@@ -33,7 +33,7 @@ class Sync(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     source = Column(String, nullable=False)
-    synced_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    synced_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
     from_date = Column(Date, nullable=False)
     to_date = Column(Date, nullable=False)
     tx_count = Column(Integer, nullable=False)
