@@ -30,15 +30,20 @@ def get_configured_banks():
         for bank in banks
     }
 
-@router.post("/settings/llm")
-def save_llm_config(config: LLMConfig):
-    credentials_store.save_llm_key(config.provider, config.api_key)
-    cfg = json.loads(CONFIG_PATH.read_text())
-    cfg["llm_provider"] = config.provider
-    CONFIG_PATH.write_text(json.dumps(cfg, indent=2))
-    return {"status": "saved", "provider": config.provider}
+def _read_config() -> dict:
+    if not CONFIG_PATH.exists():
+        return {"llm_provider": "claude", "default_sync_days": 90}
+    return json.loads(CONFIG_PATH.read_text())
 
 @router.get("/settings/llm")
 def get_llm_config():
-    cfg = json.loads(CONFIG_PATH.read_text())
+    cfg = _read_config()
     return {"provider": cfg.get("llm_provider", "claude")}
+
+@router.post("/settings/llm")
+def save_llm_config(config: LLMConfig):
+    credentials_store.save_llm_key(config.provider, config.api_key)
+    cfg = _read_config()
+    cfg["llm_provider"] = config.provider
+    CONFIG_PATH.write_text(json.dumps(cfg, indent=2))
+    return {"status": "saved", "provider": config.provider}

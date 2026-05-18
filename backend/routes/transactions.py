@@ -1,5 +1,5 @@
 from typing import Optional
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from sqlalchemy import select
 from backend.db.database import get_session
 from backend.db.models import Subscription, Transaction
@@ -36,7 +36,7 @@ def update_category(tx_id: str, body: dict):
     with get_session() as session:
         tx = session.get(Transaction, tx_id)
         if not tx:
-            return {"error": "not found"}, 404
+            raise HTTPException(status_code=404, detail="not found")
         tx.category = body["category"]
         session.commit()
         return {"id": tx_id, "category": tx.category}
@@ -62,7 +62,7 @@ def update_subscription(sub_id: str, body: dict):
     with get_session() as session:
         sub = session.get(Subscription, sub_id)
         if not sub:
-            return {"error": "not found"}, 404
+            raise HTTPException(status_code=404, detail="not found")
         if "active" in body:
             sub.active = body["active"]
         session.commit()
