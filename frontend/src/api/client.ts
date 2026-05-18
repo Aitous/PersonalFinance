@@ -1,6 +1,6 @@
 import axios from "axios";
 
-const api = axios.create({ baseURL: "http://localhost:8000" });
+const api = axios.create({ baseURL: "http://localhost:8000", timeout: 300000 }); // 5 min — MFA may require user interaction
 
 export const getTransactions = (params?: Record<string, string>) =>
   api.get("/transactions", { params }).then((r) => r.data);

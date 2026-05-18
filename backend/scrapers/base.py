@@ -6,9 +6,13 @@ from typing import ClassVar, List
 from urllib.parse import urlparse
 from playwright.async_api import Browser, BrowserContext, Page, async_playwright
 
+MFA_TIMEOUT_MS = 180_000  # 3 minutes for user to complete MFA
+
 class BaseScraper(ABC):
     ALLOWED_DOMAINS: ClassVar[List[str]] = []
     SOURCE: ClassVar[str] = ""
+    DASHBOARD_URL_PATTERN: ClassVar[str] = ""   # glob pattern matching post-login URL
+    MFA_URL_PATTERNS: ClassVar[List[str]] = []  # glob patterns for MFA/verify pages
 
     def __init__(self, username: str, password: str):
         self._username = username
@@ -29,10 +33,14 @@ class BaseScraper(ABC):
         if not self._is_allowed(url):
             raise ValueError(f"Navigation to {url} blocked — not in allowed domains {self.ALLOWED_DOMAINS}")
 
+    async def _wait_for_login(self) -> None:
+        """Wait for post-login navigation, pausing up to 3 min if MFA is required."""
+        await self._page.wait_for_url(self.DASHBOARD_URL_PATTERN, timeout=MFA_TIMEOUT_MS)
+
     async def _setup_context(self) -> None:
         self._playwright = await async_playwright().start()
         self._browser = await self._playwright.chromium.launch(
-            headless=True,
+            headless=False,
             args=["--disable-blink-features=AutomationControlled"],
         )
         self._context = await self._browser.new_context(

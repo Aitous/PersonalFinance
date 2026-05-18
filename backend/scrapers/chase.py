@@ -11,6 +11,8 @@ class ChaseScraper(BaseScraper):
     ]
     SOURCE = "chase"
     LOGIN_URL = "https://www.chase.com"
+    DASHBOARD_URL_PATTERN = "**/digital/**"
+    MFA_URL_PATTERNS = ["**/processStatus/**", "**/auth/**"]
 
     async def login(self) -> None:
         await self._page.goto(self.LOGIN_URL, wait_until="domcontentloaded")
@@ -18,7 +20,7 @@ class ChaseScraper(BaseScraper):
         await self._page.fill("#userId-text-input-field", self._username)
         await self._page.fill("#password-text-input-field", self._password)
         await self._page.click("#signin-button")
-        await self._page.wait_for_url("**/dashboard/**", timeout=30000)
+        await self._wait_for_login()
 
     async def download_transactions(self, since: date) -> Path:
         await self._page.goto("https://www.chase.com/digital/advanced-transactions/activity")

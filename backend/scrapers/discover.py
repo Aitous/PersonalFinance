@@ -7,6 +7,8 @@ class DiscoverScraper(BaseScraper):
     ALLOWED_DOMAINS = ["discover.com", "www.discover.com", "portal.discover.com"]
     SOURCE = "discover"
     LOGIN_URL = "https://portal.discover.com/customersvcs/universalLogin/ac_main"
+    DASHBOARD_URL_PATTERN = "**/cardmembersvcs/**"
+    MFA_URL_PATTERNS = ["**/otp**", "**/multifactor**", "**/challenge**"]
 
     async def login(self) -> None:
         await self._page.goto(self.LOGIN_URL, wait_until="domcontentloaded")
@@ -14,7 +16,7 @@ class DiscoverScraper(BaseScraper):
         await self._page.fill("#userid", self._username)
         await self._page.fill("#password", self._password)
         await self._page.click("#log-in-button")
-        await self._page.wait_for_url("**/cardmembersvcs/**", timeout=30000)
+        await self._wait_for_login()
 
     async def download_transactions(self, since: date) -> Path:
         await self._page.goto("https://www.discover.com/credit-cards/cardmembersvcs/acctsvcs.svc/summary")

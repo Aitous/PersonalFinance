@@ -13,6 +13,8 @@ class AmexScraper(BaseScraper):
     ]
     SOURCE = "amex"
     LOGIN_URL = "https://www.americanexpress.com/en-us/account/login"
+    DASHBOARD_URL_PATTERN = "https://www.americanexpress.com/en-us/dashboard**"
+    MFA_URL_PATTERNS = ["**/two-step-verification/**", "**/account/verify**"]
 
     async def login(self) -> None:
         await self._page.goto(self.LOGIN_URL, wait_until="domcontentloaded")
@@ -20,7 +22,7 @@ class AmexScraper(BaseScraper):
         await self._page.fill("#eliloUserID", self._username)
         await self._page.fill("#eliloPassword", self._password)
         await self._page.click("#loginSubmit")
-        await self._page.wait_for_url("**/dashboard**", timeout=30000)
+        await self._wait_for_login()
 
     async def download_transactions(self, since: date) -> Path:
         await self._page.goto("https://www.americanexpress.com/en-us/account/activity")
