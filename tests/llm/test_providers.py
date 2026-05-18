@@ -31,6 +31,14 @@ def test_factory_returns_claude(tmp_path):
         provider = get_llm_provider()
         assert isinstance(provider, ClaudeProvider)
 
+def test_factory_raises_for_unknown_provider(tmp_path):
+    config = tmp_path / "config.json"
+    config.write_text('{"llm_provider": "openai"}')
+    with patch("backend.llm.factory.CONFIG_PATH", config), \
+         patch("backend.llm.factory.credentials_store"):
+        with pytest.raises(ValueError, match="Unknown LLM provider"):
+            get_llm_provider()
+
 def test_factory_returns_gemini(tmp_path):
     config = tmp_path / "config.json"
     config.write_text('{"llm_provider": "gemini"}')

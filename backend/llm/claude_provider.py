@@ -1,10 +1,9 @@
 import anthropic
-from backend.llm.base import LLMProvider
 
 class ClaudeProvider:
     MODEL = "claude-sonnet-4-6"
 
-    def __init__(self, client: anthropic.Anthropic = None):
+    def __init__(self, client: anthropic.Anthropic):
         self._client = client
 
     def complete(self, prompt: str) -> str:
