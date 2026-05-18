@@ -36,17 +36,18 @@ def _make_id(source: str, tx_date: date, description: str, amount: float) -> str
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
 def parse_csv(file_path: Path, source: str) -> List[Transaction]:
+    if source not in BANK_SCHEMAS:
+        raise ValueError(f"Unknown source '{source}'. Valid sources: {list(BANK_SCHEMAS.keys())}")
     schema = BANK_SCHEMAS[source]
     transactions: List[Transaction] = []
 
     with open(file_path, newline="", encoding="utf-8-sig") as f:
         reader = csv.DictReader(f)
         for row in reader:
-            raw_date = row[schema["date_col"]].strip()
-            description = row[schema["description_col"]].strip()
-            amount_str = row[schema["amount_col"]].strip().replace(",", "")
-
             try:
+                raw_date = row[schema["date_col"]].strip()
+                description = row[schema["description_col"]].strip()
+                amount_str = row[schema["amount_col"]].strip().replace(",", "")
                 tx_date = datetime.strptime(raw_date, schema["date_fmt"]).date()
                 amount = float(amount_str)
             except (ValueError, KeyError):
