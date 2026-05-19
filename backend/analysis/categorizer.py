@@ -15,9 +15,9 @@ VALID_CATEGORIES = {
     "utilities", "other",
 }
 
-ENRICH_PROMPT = """You are a transaction enrichment engine. For each transaction below, extract the following fields and return them as a JSON array.
+ENRICH_PROMPT = """You are a transaction enrichment engine. For each transaction, return a JSON array of enriched objects.
 
-Valid categories (pick the best fit):
+Valid categories:
 - dining: restaurants, cafes, bars, fast food, food delivery
 - groceries: supermarkets, grocery stores, food markets (Trader Joe's, Whole Foods, Costco food)
 - transport: gas stations, Uber, Lyft, Zipcar, parking, public transit, tolls, auto services
@@ -25,19 +25,33 @@ Valid categories (pick the best fit):
 - entertainment: movies, streaming services (Netflix, Spotify, Hulu), concerts, games, sports
 - subscriptions: recurring software/app charges (Google One, Strava, iCloud, Adobe), membership fees
 - health: pharmacies, doctors, gyms, medical, dental, fitness, supplements
-- travel: flights, hotels, Airbnb, vacation rentals, travel agencies (only if clearly travel-related)
-- utilities: internet, phone, electricity, water, cable, insurance (GEICO, State Farm, Progressive, Allstate, etc.)
-- other: anything that doesn't clearly fit above
+- travel: flights, hotels, Airbnb, vacation rentals, travel agencies
+- utilities: internet, phone, electricity, water, cable, insurance (GEICO, State Farm, Progressive, Allstate)
+- other: anything else
 
-Fields to extract per transaction:
-- id: the transaction id (as given)
-- category: one of the valid categories above
-- merchant_name: canonical brand name (e.g. "Costco", "Trader Joe's", "Netflix") — not the raw description
-- city: the city name if it appears in the description, otherwise null (null for online merchants)
-- is_online: true if the merchant is an online-only service, false otherwise
-- merchant_type: short phrase describing what the merchant does (e.g. "warehouse store", "streaming service", "gas station", "restaurant")
+Rules for merchant_name:
+- Extract the BRAND NAME only — strip store numbers, location codes, booking IDs, and terminal prefixes
+- "AIRBNB * HMD4SM3882" → "Airbnb"
+- "AIRBNB * HM3AH3J5J5" → "Airbnb"
+- "COSTCO WHSE #0147" → "Costco"
+- "COSTCO GAS #0131" → "Costco"
+- "TRADER JOE'S #232 SAN FRANCISCO CA" → "Trader Joe's"
+- "TST* BLUE BOTTLE COFFEE" → "Blue Bottle Coffee"
+- "SQ *SWEET MAPLE SF" → "Sweet Maple"
+- "AMAZON.COM*AB12CD34" → "Amazon"
+- "NETFLIX.COM" → "Netflix"
+- "UBER* TRIP" → "Uber"
 
-Return ONLY a JSON array of objects with these 6 fields. No markdown, no explanation, no extra text.
+Rules for city:
+- Extract city only if clearly present in the description (e.g. "SAN FRANCISCO", "NEW YORK")
+- null for online merchants or when city is absent
+
+Rules for is_online:
+- true only for purely online services (Netflix, Amazon, Spotify, etc.)
+- false for physical stores even if they also have an online presence
+
+Return ONLY a JSON array with these 6 fields per object: id, category, merchant_name, city, is_online, merchant_type.
+No markdown, no explanation, no extra text.
 
 Transactions:
 {transactions}"""
