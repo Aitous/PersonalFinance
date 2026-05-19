@@ -62,8 +62,8 @@ def test_categorize_invalid_json_falls_back():
         assert enrichment.city is None
 
 
-def test_categorize_invalid_category_kept():
-    """If LLM returns an unrecognized category, keep it as-is (no forced normalization)."""
+def test_categorize_invalid_category_normalized_to_other():
+    """If LLM returns an unrecognized category, it should be normalized to 'other'."""
     llm = MagicMock()
     llm.complete_json.return_value = json.dumps([
         {
@@ -79,7 +79,7 @@ def test_categorize_invalid_category_kept():
     result = categorizer.categorize([make_tx("tx1", "MYSTERY STORE")])
 
     assert "tx1" in result
-    assert result["tx1"].category == "weird_unknown_category"
+    assert result["tx1"].category == "other"
 
 
 def test_categorize_city_and_online_fields():
@@ -113,3 +113,33 @@ def test_categorize_city_and_online_fields():
     assert result["tx1"].is_online is True
     assert result["tx2"].city == "Los Angeles"
     assert result["tx2"].is_online is False
+
+
+def test_categorize_partial_llm_response():
+    """If LLM only returns enrichment for some transactions, missing ones get a fallback."""
+    llm = MagicMock()
+    llm.complete_json.return_value = json.dumps([
+        {
+            "id": "tx1",
+            "category": "dining",
+            "merchant_name": "Burger Place",
+            "city": "New York",
+            "is_online": False,
+            "merchant_type": "restaurant",
+        }
+    ])
+    categorizer = Categorizer(llm)
+    txs = [make_tx("tx1", "BURGER PLACE NYC"), make_tx("tx2", "UNKNOWN STORE")]
+    result = categorizer.categorize(txs)
+
+    assert set(result.keys()) == {"tx1", "tx2"}
+    assert result["tx1"].category == "dining"
+    assert result["tx1"].merchant_name == "Burger Place"
+
+    fallback = result["tx2"]
+    assert isinstance(fallback, TransactionEnrichment)
+    assert fallback.category == "other"
+    assert fallback.merchant_name == "UNKNOWN STORE"
+    assert fallback.city is None
+    assert fallback.is_online is False
+    assert fallback.merchant_type == "unknown"

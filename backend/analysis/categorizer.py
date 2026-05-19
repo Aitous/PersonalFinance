@@ -1,8 +1,13 @@
+from __future__ import annotations
+
 import json
-from typing import Dict, List, Optional
-from pydantic import BaseModel
+import logging
+from typing import Optional
+from pydantic import BaseModel, ValidationError, field_validator
 from backend.db.models import Transaction
 from backend.llm.base import LLMProvider
+
+logger = logging.getLogger(__name__)
 
 VALID_CATEGORIES = {
     "dining", "groceries", "transport", "shopping",
@@ -46,12 +51,30 @@ class TransactionEnrichment(BaseModel):
     is_online: bool
     merchant_type: str
 
+    @field_validator("category")
+    @classmethod
+    def normalize_category(cls, v: str) -> str:
+        if v not in VALID_CATEGORIES:
+            return "other"
+        return v
+
+
+def _fallback_enrichment(tx: Transaction) -> TransactionEnrichment:
+    return TransactionEnrichment(
+        id=tx.id,
+        category="other",
+        merchant_name=tx.description,
+        city=None,
+        is_online=False,
+        merchant_type="unknown",
+    )
+
 
 class Categorizer:
     def __init__(self, llm: LLMProvider):
         self._llm = llm
 
-    def categorize(self, transactions: List[Transaction]) -> Dict[str, TransactionEnrichment]:
+    def categorize(self, transactions: list[Transaction]) -> dict[str, TransactionEnrichment]:
         if not transactions:
             return {}
 
@@ -65,16 +88,15 @@ class Categorizer:
             response = self._llm.complete_json(prompt)
             data = json.loads(response)
             enrichments = [TransactionEnrichment(**item) for item in data]
-            return {e.id: e for e in enrichments}
-        except Exception:
-            return {
-                tx.id: TransactionEnrichment(
-                    id=tx.id,
-                    category="other",
-                    merchant_name=tx.description,
-                    city=None,
-                    is_online=False,
-                    merchant_type="unknown",
-                )
-                for tx in transactions
-            }
+            result = {e.id: e for e in enrichments}
+        except (json.JSONDecodeError, KeyError, ValidationError) as exc:
+            logger.warning("LLM response parsing failed (%s: %s); falling back to defaults", type(exc).__name__, exc)
+            return {tx.id: _fallback_enrichment(tx) for tx in transactions}
+
+        # Fill in fallbacks for any input transactions missing from the LLM response
+        for tx in transactions:
+            if tx.id not in result:
+                logger.warning("LLM response missing enrichment for transaction id=%s; using fallback", tx.id)
+                result[tx.id] = _fallback_enrichment(tx)
+
+        return result
