@@ -18,6 +18,7 @@ export function Transactions() {
   const navigate = useNavigate();
   const [txs, setTxs] = useState<any[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [filterCategory, setFilterCategory] = useState("");
   const [filterSource, setFilterSource] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
@@ -154,40 +155,76 @@ export function Transactions() {
             </tr>
           </thead>
           <tbody>
-            {txs.map((tx) => (
-              <tr key={tx.id} style={{ borderTop: "1px solid #f0f0f0" }}>
-                <td style={{ padding: "10px 16px", color: "#888" }}>{tx.date}</td>
-                <td style={{ padding: "10px 16px" }}>{tx.description}</td>
-                <td style={{ padding: "10px 16px", color: "#888", textTransform: "capitalize" }}>
-                  {tx.source}
-                  {tx.match_type && (
-                    <span style={{ marginLeft: 6, fontSize: 10, padding: "1px 5px", borderRadius: 8,
-                      background: tx.match_type === "both" ? "#d1fae5" : tx.match_type === "semantic" ? "#ede9fe" : "#dbeafe",
-                      color: tx.match_type === "both" ? "#065f46" : tx.match_type === "semantic" ? "#5b21b6" : "#1e40af",
-                    }}>{tx.match_type}</span>
+            {txs.map((tx) => {
+              const isExpanded = expandedId === tx.id;
+              return (
+                <>
+                  <tr
+                    key={tx.id}
+                    style={{ borderTop: "1px solid #f0f0f0", cursor: "pointer", background: isExpanded ? "#f9fafb" : undefined }}
+                    onClick={() => setExpandedId(isExpanded ? null : tx.id)}
+                  >
+                    <td style={{ padding: "10px 16px", color: "#888" }}>{tx.date}</td>
+                    <td style={{ padding: "10px 16px" }}>
+                      {tx.description}
+                      {tx.merchant_name && tx.merchant_name !== tx.description && (
+                        <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 2 }}>{tx.merchant_name}</div>
+                      )}
+                    </td>
+                    <td style={{ padding: "10px 16px", color: "#888", textTransform: "capitalize" }}>
+                      {tx.source}
+                      {tx.match_type && (
+                        <span style={{ marginLeft: 6, fontSize: 10, padding: "1px 5px", borderRadius: 8,
+                          background: tx.match_type === "both" ? "#d1fae5" : tx.match_type === "semantic" ? "#ede9fe" : "#dbeafe",
+                          color: tx.match_type === "both" ? "#065f46" : tx.match_type === "semantic" ? "#5b21b6" : "#1e40af",
+                        }}>{tx.match_type}</span>
+                      )}
+                    </td>
+                    <td style={{ padding: "10px 16px" }} onClick={(e) => e.stopPropagation()}>
+                      {editingId === tx.id ? (
+                        <select autoFocus defaultValue={tx.category}
+                          onChange={(e) => handleCategoryChange(tx.id, e.target.value)}
+                          onBlur={() => setEditingId(null)}
+                          style={{ fontSize: 13, padding: "2px 6px", borderRadius: 4 }}>
+                          {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                      ) : (
+                        <span onClick={() => setEditingId(tx.id)} style={{
+                          background: CATEGORY_COLORS[tx.category] ?? "#d1d5db",
+                          color: "#fff", padding: "2px 8px", borderRadius: 12,
+                          fontSize: 12, cursor: "pointer",
+                        }}>{tx.category ?? "—"}</span>
+                      )}
+                    </td>
+                    <td style={{ padding: "10px 16px", textAlign: "right", color: tx.amount < 0 ? "#e05" : "#0a0", fontWeight: 600 }}>
+                      {tx.amount < 0 ? "-" : "+"}${Math.abs(tx.amount).toFixed(2)}
+                    </td>
+                  </tr>
+                  {isExpanded && (
+                    <tr key={`${tx.id}-detail`} style={{ background: "#f9fafb" }}>
+                      <td colSpan={5} style={{ padding: "10px 24px 14px", borderTop: "1px solid #e5e7eb" }}>
+                        <div style={{ display: "flex", gap: 32, fontSize: 13, color: "#4b5563" }}>
+                          {tx.merchant_name && (
+                            <div><span style={{ color: "#9ca3af" }}>Merchant</span><br /><strong>{tx.merchant_name}</strong></div>
+                          )}
+                          {tx.merchant_type && (
+                            <div><span style={{ color: "#9ca3af" }}>Type</span><br /><strong>{tx.merchant_type}</strong></div>
+                          )}
+                          {tx.city && (
+                            <div><span style={{ color: "#9ca3af" }}>City</span><br /><strong>{tx.city}</strong></div>
+                          )}
+                          <div><span style={{ color: "#9ca3af" }}>Online</span><br /><strong>{tx.is_online ? "Yes" : "No"}</strong></div>
+                          {tx.is_subscription && (
+                            <div><span style={{ color: "#9ca3af" }}>Recurring</span><br /><strong style={{ color: "#7c6af7" }}>Yes</strong></div>
+                          )}
+                          <div><span style={{ color: "#9ca3af" }}>ID</span><br /><span style={{ fontFamily: "monospace", fontSize: 11, color: "#9ca3af" }}>{tx.id}</span></div>
+                        </div>
+                      </td>
+                    </tr>
                   )}
-                </td>
-                <td style={{ padding: "10px 16px" }}>
-                  {editingId === tx.id ? (
-                    <select autoFocus defaultValue={tx.category}
-                      onChange={(e) => handleCategoryChange(tx.id, e.target.value)}
-                      onBlur={() => setEditingId(null)}
-                      style={{ fontSize: 13, padding: "2px 6px", borderRadius: 4 }}>
-                      {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
-                    </select>
-                  ) : (
-                    <span onClick={() => setEditingId(tx.id)} style={{
-                      background: CATEGORY_COLORS[tx.category] ?? "#d1d5db",
-                      color: "#fff", padding: "2px 8px", borderRadius: 12,
-                      fontSize: 12, cursor: "pointer",
-                    }}>{tx.category ?? "—"}</span>
-                  )}
-                </td>
-                <td style={{ padding: "10px 16px", textAlign: "right", color: tx.amount < 0 ? "#e05" : "#0a0", fontWeight: 600 }}>
-                  {tx.amount < 0 ? "-" : "+"}${Math.abs(tx.amount).toFixed(2)}
-                </td>
-              </tr>
-            ))}
+                </>
+              );
+            })}
           </tbody>
         </table>
         {txs.length === 0 && (

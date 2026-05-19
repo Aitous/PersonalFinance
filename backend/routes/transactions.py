@@ -42,6 +42,10 @@ def list_transactions(
                 "amount": tx.amount,
                 "category": tx.category,
                 "is_subscription": tx.is_subscription,
+                "merchant_name": tx.merchant_name,
+                "city": tx.city,
+                "is_online": tx.is_online,
+                "merchant_type": tx.merchant_type,
             }
             for tx in txs
         ]
