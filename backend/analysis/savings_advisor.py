@@ -1,4 +1,4 @@
-from typing import Dict, List
+from typing import Dict, List, Optional
 from backend.llm.base import LLMProvider
 
 SAVINGS_PROMPT = """You are a personal finance advisor. Based on the spending summary below,
@@ -9,20 +9,37 @@ Period: {period}
 Spending by category (USD):
 {categories}
 
+Active recurring subscriptions ({sub_count} total, ${sub_monthly:.2f}/mo):
+{subscriptions}
+
 Return a numbered list only. No preamble or closing remarks."""
 
 class SavingsAdvisor:
     def __init__(self, llm: LLMProvider):
         self._llm = llm
 
-    def get_tips(self, category_summary: Dict, period: str) -> List[str]:
+    def get_tips(self, category_summary: Dict, period: str, subscriptions: Optional[List[dict]] = None) -> List[str]:
         categories_text = "\n".join(
-            f"- {cat}: ${data['total']:.0f} total"
-            + (f", ${data['avg_monthly']:.0f}/mo avg" if "avg_monthly" in data else "")
-            + (f", {data['count']} services" if "count" in data else "")
+            f"- {cat}: ${data['total']:.0f} total" + (f", ${data['avg_monthly']:.0f}/mo avg" if "avg_monthly" in data else "")
             for cat, data in category_summary.items()
         )
-        prompt = SAVINGS_PROMPT.format(period=period, categories=categories_text)
+
+        subs = subscriptions or []
+        monthly_subs = [s for s in subs if s["frequency"] == "monthly"]
+        annual_subs = [s for s in subs if s["frequency"] == "annual"]
+        sub_monthly = sum(s["amount"] for s in monthly_subs) + sum(s["amount"] / 12 for s in annual_subs)
+        subs_text = "\n".join(
+            f"- {s['name']}: ${s['amount']:.2f}/{s['frequency']}"
+            for s in sorted(subs, key=lambda x: -x["amount"])
+        ) or "None detected"
+
+        prompt = SAVINGS_PROMPT.format(
+            period=period,
+            categories=categories_text,
+            sub_count=len(subs),
+            sub_monthly=sub_monthly,
+            subscriptions=subs_text,
+        )
         response = self._llm.complete(prompt)
 
         tips = []

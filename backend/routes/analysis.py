@@ -103,7 +103,12 @@ def get_savings_tips(body: SavingsTipsRequest = SavingsTipsRequest()):
     period_end = date.today().strftime("%b %Y")
     period = f"{period_start}–{period_end}"
 
+    with get_session() as session:
+        from backend.db.models import Subscription
+        subs = session.execute(select(Subscription).where(Subscription.active == True)).scalars().all()
+        subscriptions = [{"name": s.description, "amount": s.amount, "frequency": s.frequency} for s in subs]
+
     llm = get_llm_provider(provider_override=body.provider, use_pro=True)
     advisor = SavingsAdvisor(llm=llm)
-    tips = advisor.get_tips(summary, period=period)
+    tips = advisor.get_tips(summary, period=period, subscriptions=subscriptions)
     return {"tips": tips, "period": period}
