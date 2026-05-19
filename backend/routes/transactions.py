@@ -82,14 +82,14 @@ def redetect_subscriptions():
     with get_session() as session:
         all_txs = session.execute(select(Transaction)).scalars().all()
         subs = detector.detect(list(all_txs))
+        # Replace all subscriptions with freshly detected ones
+        session.execute(select(Subscription).where(True))  # ensure table is loaded
+        existing = session.execute(select(Subscription)).scalars().all()
+        for s in existing:
+            session.delete(s)
+        session.flush()
         for sub in subs:
-            existing = session.get(Subscription, sub.id)
-            if existing:
-                existing.last_charged = sub.last_charged
-                existing.amount = sub.amount
-                existing.active = sub.active
-            else:
-                session.add(sub)
+            session.add(sub)
         session.commit()
     return {"detected": len(subs)}
 
