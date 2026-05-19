@@ -1,5 +1,5 @@
 from datetime import date, datetime, timezone
-from typing import Literal
+from typing import List, Literal
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -41,9 +41,17 @@ class SyncService:
                 new_txs.append(tx)
 
         if new_txs:
-            categories = self._categorizer.categorize(new_txs)
+            enrichments = self._categorizer.categorize(new_txs)
             for tx in new_txs:
-                tx.category = categories.get(tx.id, "other")
+                e = enrichments.get(tx.id)
+                if e:
+                    tx.category = e.category
+                    tx.merchant_name = e.merchant_name
+                    tx.city = e.city
+                    tx.is_online = e.is_online
+                    tx.merchant_type = e.merchant_type
+                else:
+                    tx.category = "other"
                 self._session.add(tx)
 
         all_txs = self._session.execute(select(Transaction)).scalars().all()
@@ -67,3 +75,58 @@ class SyncService:
         self._session.commit()
 
         return {"bank": bank, "tx_count": len(new_txs)}
+
+    def import_transactions(self, transactions: List[Transaction]) -> dict:
+        """Import pre-parsed transactions (e.g. from CSV files), running full pipeline."""
+        # Deduplicate within the incoming list itself before querying the DB
+        seen_ids: set = set()
+        unique_transactions = []
+        for tx in transactions:
+            if tx.id not in seen_ids:
+                seen_ids.add(tx.id)
+                unique_transactions.append(tx)
+        transactions = unique_transactions
+
+        new_txs = []
+        for tx in transactions:
+            exists = self._session.execute(
+                select(Transaction).where(Transaction.id == tx.id)
+            ).scalar_one_or_none()
+            if not exists:
+                new_txs.append(tx)
+
+        if new_txs:
+            enrichments = self._categorizer.categorize(new_txs)
+            for tx in new_txs:
+                e = enrichments.get(tx.id)
+                if e:
+                    tx.category = e.category
+                    tx.merchant_name = e.merchant_name
+                    tx.city = e.city
+                    tx.is_online = e.is_online
+                    tx.merchant_type = e.merchant_type
+                else:
+                    tx.category = "other"
+                self._session.add(tx)
+
+        all_txs = self._session.execute(select(Transaction)).scalars().all()
+        subs = self._sub_detector.detect(list(all_txs))
+        for sub in subs:
+            existing = self._session.get(Subscription, sub.id)
+            if existing:
+                existing.last_charged = sub.last_charged
+                existing.amount = sub.amount
+            else:
+                self._session.add(sub)
+
+        sync_record = Sync(
+            source=transactions[0].source if transactions else "csv",
+            synced_at=datetime.now(timezone.utc),
+            from_date=min(t.date for t in transactions) if transactions else date.today(),
+            to_date=date.today(),
+            tx_count=len(new_txs),
+        )
+        self._session.add(sync_record)
+        self._session.commit()
+
+        return {"tx_count": len(new_txs), "total_parsed": len(transactions)}
