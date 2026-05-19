@@ -1,42 +1,115 @@
-import pytest
+import json
 from unittest.mock import MagicMock
-from datetime import date
-from backend.analysis.categorizer import Categorizer, VALID_CATEGORIES
-from backend.db.models import Transaction
+import pytest
 
-def make_tx(id, description, amount):
-    return Transaction(
-        id=id, source="chase", date=date(2025, 5, 1),
-        description=description, amount=amount
-    )
+from backend.analysis.categorizer import Categorizer, TransactionEnrichment
 
-def test_categorizes_batch_of_transactions():
-    mock_llm = MagicMock()
-    mock_llm.complete.return_value = (
-        "tx1: groceries\ntx2: dining\ntx3: subscriptions"
-    )
-    categorizer = Categorizer(llm=mock_llm)
-    txs = [
-        make_tx("tx1", "WHOLE FOODS", -84.20),
-        make_tx("tx2", "UBER EATS", -32.50),
-        make_tx("tx3", "NETFLIX.COM", -15.99),
-    ]
-    result = categorizer.categorize(txs)
-    assert result["tx1"] == "groceries"
-    assert result["tx2"] == "dining"
-    assert result["tx3"] == "subscriptions"
 
-def test_falls_back_to_other_for_unknown_category():
-    mock_llm = MagicMock()
-    mock_llm.complete.return_value = "tx1: banana_stuff"
-    categorizer = Categorizer(llm=mock_llm)
-    txs = [make_tx("tx1", "RANDOM MERCHANT", -10.00)]
-    result = categorizer.categorize(txs)
-    assert result["tx1"] == "other"
+def make_tx(id, description, amount=10.0):
+    tx = MagicMock()
+    tx.id = id
+    tx.description = description
+    tx.amount = amount
+    return tx
 
-def test_empty_list_returns_empty_dict():
-    mock_llm = MagicMock()
-    categorizer = Categorizer(llm=mock_llm)
+
+def test_categorize_returns_enrichment_objects():
+    llm = MagicMock()
+    llm.complete_json.return_value = json.dumps([
+        {
+            "id": "tx1",
+            "category": "groceries",
+            "merchant_name": "Trader Joe's",
+            "city": "San Francisco",
+            "is_online": False,
+            "merchant_type": "grocery store",
+        }
+    ])
+    categorizer = Categorizer(llm)
+    result = categorizer.categorize([make_tx("tx1", "TRADER JOES #123 SAN FRANCISCO", 45.00)])
+
+    assert "tx1" in result
+    enrichment = result["tx1"]
+    assert isinstance(enrichment, TransactionEnrichment)
+    assert enrichment.category == "groceries"
+    assert enrichment.merchant_name == "Trader Joe's"
+    assert enrichment.city == "San Francisco"
+    assert enrichment.is_online is False
+    assert enrichment.merchant_type == "grocery store"
+
+
+def test_categorize_empty_returns_empty_dict():
+    llm = MagicMock()
+    categorizer = Categorizer(llm)
     result = categorizer.categorize([])
     assert result == {}
-    mock_llm.complete.assert_not_called()
+    llm.complete_json.assert_not_called()
+
+
+def test_categorize_invalid_json_falls_back():
+    llm = MagicMock()
+    llm.complete_json.return_value = "not valid json at all!!!"
+    categorizer = Categorizer(llm)
+    txs = [make_tx("tx1", "SOME STORE"), make_tx("tx2", "ANOTHER STORE")]
+    result = categorizer.categorize(txs)
+
+    assert set(result.keys()) == {"tx1", "tx2"}
+    for tx_id, enrichment in result.items():
+        assert isinstance(enrichment, TransactionEnrichment)
+        assert enrichment.category == "other"
+        assert enrichment.is_online is False
+        assert enrichment.merchant_type == "unknown"
+        assert enrichment.city is None
+
+
+def test_categorize_invalid_category_kept():
+    """If LLM returns an unrecognized category, keep it as-is (no forced normalization)."""
+    llm = MagicMock()
+    llm.complete_json.return_value = json.dumps([
+        {
+            "id": "tx1",
+            "category": "weird_unknown_category",
+            "merchant_name": "Mystery Store",
+            "city": None,
+            "is_online": False,
+            "merchant_type": "unknown store",
+        }
+    ])
+    categorizer = Categorizer(llm)
+    result = categorizer.categorize([make_tx("tx1", "MYSTERY STORE")])
+
+    assert "tx1" in result
+    assert result["tx1"].category == "weird_unknown_category"
+
+
+def test_categorize_city_and_online_fields():
+    llm = MagicMock()
+    llm.complete_json.return_value = json.dumps([
+        {
+            "id": "tx1",
+            "category": "subscriptions",
+            "merchant_name": "Netflix",
+            "city": None,
+            "is_online": True,
+            "merchant_type": "streaming service",
+        },
+        {
+            "id": "tx2",
+            "category": "dining",
+            "merchant_name": "In-N-Out Burger",
+            "city": "Los Angeles",
+            "is_online": False,
+            "merchant_type": "fast food restaurant",
+        },
+    ])
+    categorizer = Categorizer(llm)
+    txs = [
+        make_tx("tx1", "NETFLIX.COM", 15.99),
+        make_tx("tx2", "IN N OUT BURGER LOS ANGELES", 12.50),
+    ]
+    result = categorizer.categorize(txs)
+
+    assert result["tx1"].city is None
+    assert result["tx1"].is_online is True
+    assert result["tx2"].city == "Los Angeles"
+    assert result["tx2"].is_online is False
