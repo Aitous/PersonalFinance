@@ -1,10 +1,22 @@
 import { useEffect, useState } from "react";
-import { getSubscriptions, updateSubscription } from "../api/client";
+import { getSubscriptions, updateSubscription, redetectSubscriptions } from "../api/client";
 
 export function Subscriptions() {
   const [subs, setSubs] = useState<any[]>([]);
+  const [redetecting, setRedetecting] = useState(false);
 
   useEffect(() => { getSubscriptions().then(setSubs); }, []);
+
+  const handleRedetect = async () => {
+    setRedetecting(true);
+    try {
+      await redetectSubscriptions();
+      const fresh = await getSubscriptions();
+      setSubs(fresh);
+    } finally {
+      setRedetecting(false);
+    }
+  };
 
   const toggleActive = async (id: string, active: boolean) => {
     await updateSubscription(id, { active: !active });
@@ -17,8 +29,16 @@ export function Subscriptions() {
 
   return (
     <div>
-      <h1 style={{ fontSize: 24, marginBottom: 8 }}>Subscriptions</h1>
-      <p style={{ color: "#888", marginBottom: 16 }}>Auto-detected recurring charges</p>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+        <h1 style={{ fontSize: 24, margin: 0 }}>Recurring Charges</h1>
+        <button onClick={handleRedetect} disabled={redetecting} style={{
+          background: "#7c6af7", color: "#fff", border: "none",
+          borderRadius: 8, padding: "7px 16px", cursor: "pointer", fontSize: 13,
+        }}>
+          {redetecting ? "Detecting…" : "Re-detect"}
+        </button>
+      </div>
+      <p style={{ color: "#888", marginBottom: 16 }}>Auto-detected subscriptions and recurring bills</p>
 
       <div style={{ display: "flex", gap: 16, marginBottom: 28 }}>
         <div style={{ background: "#fff", borderRadius: 10, padding: "14px 20px", boxShadow: "0 1px 4px rgba(0,0,0,0.07)" }}>

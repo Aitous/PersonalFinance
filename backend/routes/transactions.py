@@ -75,6 +75,25 @@ def list_subscriptions():
             for sub in subs
         ]
 
+@router.post("/subscriptions/redetect")
+def redetect_subscriptions():
+    from backend.analysis.subscription_detector import SubscriptionDetector
+    detector = SubscriptionDetector()
+    with get_session() as session:
+        all_txs = session.execute(select(Transaction)).scalars().all()
+        subs = detector.detect(list(all_txs))
+        for sub in subs:
+            existing = session.get(Subscription, sub.id)
+            if existing:
+                existing.last_charged = sub.last_charged
+                existing.amount = sub.amount
+                existing.active = sub.active
+            else:
+                session.add(sub)
+        session.commit()
+    return {"detected": len(subs)}
+
+
 @router.patch("/subscriptions/{sub_id}")
 def update_subscription(sub_id: str, body: dict):
     with get_session() as session:

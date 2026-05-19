@@ -56,6 +56,9 @@ export const triggerEnrichment = () =>
 export const getEnrichStatus = () =>
   api.get("/import/enrich/status").then((r) => r.data);
 
+export const redetectSubscriptions = () =>
+  api.post("/subscriptions/redetect").then((r) => r.data);
+
 export const uploadCSV = (bank: string, file: File) => {
   const form = new FormData();
   form.append("file", file);
