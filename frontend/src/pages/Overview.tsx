@@ -154,12 +154,6 @@ export function Overview() {
             <option value="amex">Amex</option>
             <option value="discover">Discover</option>
           </select>
-          <button onClick={handleEnrich} disabled={enriching} style={{
-            background: "#10b981", color: "#fff", border: "none",
-            borderRadius: 8, padding: "7px 16px", cursor: "pointer", fontSize: 13,
-          }}>
-            {enriching ? "Starting…" : "Enrich with AI"}
-          </button>
           <label style={{
             background: "#fff", border: "1px solid #c9c0f8", borderRadius: 8,
             padding: "6px 14px", cursor: "pointer", fontSize: 13, color: "#7c6af7",
@@ -168,13 +162,22 @@ export function Overview() {
             <input ref={fileRef} type="file" accept=".csv,.CSV" style={{ display: "none" }} onChange={handleFileUpload} disabled={importing} />
           </label>
         </div>
+        <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 10 }}>
+          <button onClick={handleEnrich} disabled={enriching} style={{
+            background: "#10b981", color: "#fff", border: "none",
+            borderRadius: 8, padding: "7px 16px", cursor: "pointer", fontSize: 13,
+          }}>
+            {enriching ? "Enriching…" : "Enrich all transactions with AI"}
+          </button>
+          <span style={{ color: "#6b7280", fontSize: 12 }}>Extracts merchant names, cities, and types for all banks</span>
+        </div>
         {importMsg && (
           <div style={{ marginTop: 10, fontSize: 13, color: importMsg.startsWith("Import") && !importMsg.includes("failed") ? "#0a0" : "#e05" }}>
             {importMsg}
           </div>
         )}
         {enrichMsg && (
-          <div style={{ marginTop: 6, fontSize: 13, color: enrichMsg.startsWith("Enrichment started") ? "#0a0" : "#e05" }}>
+          <div style={{ marginTop: 6, fontSize: 13, color: enrichMsg.startsWith("Done") ? "#0a0" : enrichMsg.startsWith("Enrichment failed") ? "#e05" : "#555" }}>
             {enrichMsg}
           </div>
         )}
