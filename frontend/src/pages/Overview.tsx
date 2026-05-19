@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { getOverview, triggerSync, getConfiguredBanks, importFromFolder, uploadCSV, triggerEnrichment } from "../api/client";
+import { getOverview, triggerSync, getConfiguredBanks, importFromFolder, uploadCSV, triggerEnrichment, getEnrichStatus } from "../api/client";
 import { SpendingLineChart } from "../components/SpendingLineChart";
 import { CategoryStackedBar } from "../components/CategoryStackedBar";
 
@@ -57,13 +57,31 @@ export function Overview() {
 
   const handleEnrich = async () => {
     setEnriching(true);
-    setEnrichMsg(null);
+    setEnrichMsg("Starting enrichment…");
     try {
       await triggerEnrichment();
-      setEnrichMsg("Enrichment started in background — merchant names, cities, and types will appear shortly.");
+      // Poll until the job finishes
+      const poll = async (): Promise<void> => {
+        const status = await getEnrichStatus();
+        if (status.error) {
+          setEnrichMsg(`Enrichment failed: ${status.error}`);
+          setEnriching(false);
+          return;
+        }
+        if (status.running || status.total === 0) {
+          const progress = status.total > 0
+            ? ` (${status.done}/${status.total})`
+            : "";
+          setEnrichMsg(`Enriching transactions${progress}…`);
+          setTimeout(poll, 2000);
+        } else {
+          setEnrichMsg(`Done — ${status.done} transactions enriched.`);
+          setEnriching(false);
+        }
+      };
+      setTimeout(poll, 1000);
     } catch (e: any) {
       setEnrichMsg(`Enrichment failed: ${e?.response?.data?.detail ?? e.message}`);
-    } finally {
       setEnriching(false);
     }
   };

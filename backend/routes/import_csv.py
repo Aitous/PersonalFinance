@@ -124,6 +124,19 @@ import threading as _threading
 
 _enrich_lock = _threading.Lock()
 _enrich_logger = _logging.getLogger(__name__)
+_enrich_state: dict = {"running": False, "total": 0, "done": 0, "error": None}
+
+
+@router.get("/import/enrich/status")
+def enrich_status():
+    remaining = _enrich_state["total"] - _enrich_state["done"]
+    return {
+        "running": _enrich_state["running"],
+        "total": _enrich_state["total"],
+        "done": _enrich_state["done"],
+        "remaining": remaining,
+        "error": _enrich_state["error"],
+    }
 
 
 @router.post("/import/enrich")
@@ -135,6 +148,7 @@ def enrich_existing(background_tasks: BackgroundTasks):
         if not _enrich_lock.acquire(blocking=False):
             _enrich_logger.info("Enrichment already running, skipping duplicate request")
             return
+        _enrich_state.update({"running": True, "total": 0, "done": 0, "error": None})
         try:
             llm = get_llm_provider()
             categorizer = Categorizer(llm=llm)
@@ -144,6 +158,7 @@ def enrich_existing(background_tasks: BackgroundTasks):
                 ).scalars().all()
                 session.expunge_all()
 
+            _enrich_state["total"] = len(txs)
             if not txs:
                 return
 
@@ -159,11 +174,14 @@ def enrich_existing(background_tasks: BackgroundTasks):
                         tx.merchant_type = enrich.merchant_type
                         if not tx.category or tx.category == "other":
                             tx.category = enrich.category
+                    _enrich_state["done"] += 1
                 session.commit()
             _enrich_logger.info("Enrichment complete: %d transactions processed", len(txs))
-        except Exception:
+        except Exception as exc:
             _enrich_logger.exception("Enrichment background task failed")
+            _enrich_state["error"] = str(exc)
         finally:
+            _enrich_state["running"] = False
             _enrich_lock.release()
 
     background_tasks.add_task(_run)

@@ -53,6 +53,9 @@ export const getInsights = (merchantDays = 90) =>
 export const triggerEnrichment = () =>
   api.post("/import/enrich").then((r) => r.data);
 
+export const getEnrichStatus = () =>
+  api.get("/import/enrich/status").then((r) => r.data);
+
 export const uploadCSV = (bank: string, file: File) => {
   const form = new FormData();
   form.append("file", file);
