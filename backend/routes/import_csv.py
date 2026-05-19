@@ -159,6 +159,7 @@ def enrich_existing(background_tasks: BackgroundTasks):
 
             _enrich_state["total"] = len(txs)
             if not txs:
+                _enrich_state["status"] = "done"
                 return
 
             enrichments = categorizer.categorize(list(txs))
