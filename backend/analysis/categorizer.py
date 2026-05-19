@@ -70,14 +70,14 @@ def _fallback_enrichment(tx: Transaction) -> TransactionEnrichment:
     )
 
 
+BATCH_SIZE = 50
+
+
 class Categorizer:
     def __init__(self, llm: LLMProvider):
         self._llm = llm
 
-    def categorize(self, transactions: list[Transaction]) -> dict[str, TransactionEnrichment]:
-        if not transactions:
-            return {}
-
+    def _enrich_batch(self, transactions: list[Transaction]) -> dict[str, TransactionEnrichment]:
         tx_lines = "\n".join(
             f"{tx.id}: {tx.description} ${abs(tx.amount):.2f}"
             for tx in transactions
@@ -93,10 +93,21 @@ class Categorizer:
             logger.warning("LLM response parsing failed (%s: %s); falling back to defaults", type(exc).__name__, exc)
             return {tx.id: _fallback_enrichment(tx) for tx in transactions}
 
-        # Fill in fallbacks for any input transactions missing from the LLM response
         for tx in transactions:
             if tx.id not in result:
-                logger.warning("LLM response missing enrichment for transaction id=%s; using fallback", tx.id)
+                logger.warning("LLM response missing enrichment for id=%s; using fallback", tx.id)
                 result[tx.id] = _fallback_enrichment(tx)
+
+        return result
+
+    def categorize(self, transactions: list[Transaction]) -> dict[str, TransactionEnrichment]:
+        if not transactions:
+            return {}
+
+        result: dict[str, TransactionEnrichment] = {}
+        for i in range(0, len(transactions), BATCH_SIZE):
+            batch = transactions[i:i + BATCH_SIZE]
+            result.update(self._enrich_batch(batch))
+            logger.info("Enriched %d/%d transactions", min(i + BATCH_SIZE, len(transactions)), len(transactions))
 
         return result

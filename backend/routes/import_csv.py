@@ -162,20 +162,23 @@ def enrich_existing(background_tasks: BackgroundTasks):
                 _enrich_state["status"] = "done"
                 return
 
-            enrichments = categorizer.categorize(list(txs))
+            from backend.analysis.categorizer import BATCH_SIZE
+            for i in range(0, len(txs), BATCH_SIZE):
+                batch = txs[i:i + BATCH_SIZE]
+                enrichments = categorizer._enrich_batch(batch)
+                with get_session() as session:
+                    for tx_id, enrich in enrichments.items():
+                        tx = session.get(Transaction, tx_id)
+                        if tx:
+                            tx.merchant_name = enrich.merchant_name
+                            tx.city = enrich.city
+                            tx.is_online = enrich.is_online
+                            tx.merchant_type = enrich.merchant_type
+                            if not tx.category or tx.category == "other":
+                                tx.category = enrich.category
+                    session.commit()
+                _enrich_state["done"] += len(batch)
 
-            with get_session() as session:
-                for tx_id, enrich in enrichments.items():
-                    tx = session.get(Transaction, tx_id)
-                    if tx:
-                        tx.merchant_name = enrich.merchant_name
-                        tx.city = enrich.city
-                        tx.is_online = enrich.is_online
-                        tx.merchant_type = enrich.merchant_type
-                        if not tx.category or tx.category == "other":
-                            tx.category = enrich.category
-                    _enrich_state["done"] += 1
-                session.commit()
             _enrich_state["status"] = "done"
             _enrich_logger.info("Enrichment complete: %d transactions processed", len(txs))
         except Exception as exc:
