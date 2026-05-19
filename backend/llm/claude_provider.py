@@ -13,3 +13,11 @@ class ClaudeProvider:
             messages=[{"role": "user", "content": prompt}],
         )
         return response.content[0].text
+
+    def complete_json(self, prompt: str) -> str:
+        response = self._client.messages.create(
+            model=self.MODEL,
+            max_tokens=4096,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return response.content[0].text
