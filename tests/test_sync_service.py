@@ -6,6 +6,32 @@ from backend.db.models import Transaction
 from backend.sync_service import SyncService
 
 
+def _make_execute_side_effect(dedup_result, all_txs_result):
+    """Return a side_effect function for session.execute.
+
+    The first N calls are dedup checks (returning scalar_one_or_none),
+    the last call fetches all transactions (returning scalars().all()).
+    We detect which call it is by checking the query string for a WHERE clause.
+    """
+    call_results = []
+
+    def side_effect(stmt):
+        # Inspect compiled statement; dedup queries have a WHERE clause
+        stmt_str = str(stmt)
+        if "WHERE" in stmt_str.upper():
+            mock = MagicMock()
+            mock.scalar_one_or_none.return_value = dedup_result
+            call_results.append("dedup")
+            return mock
+        else:
+            mock = MagicMock()
+            mock.scalars.return_value.all.return_value = all_txs_result
+            call_results.append("all_txs")
+            return mock
+
+    return side_effect
+
+
 @patch("backend.sync_service.download_transactions")
 def test_sync_saves_new_transactions(mock_download):
     tx = Transaction(
@@ -18,8 +44,9 @@ def test_sync_saves_new_transactions(mock_download):
     mock_download.return_value = [tx]
 
     session = MagicMock()
-    session.execute.return_value.scalar_one_or_none.return_value = None
-    session.execute.return_value.scalars.return_value.all.return_value = [tx]
+    session.execute.side_effect = _make_execute_side_effect(
+        dedup_result=None, all_txs_result=[tx]
+    )
 
     llm = MagicMock()
     service = SyncService(session=session, llm=llm)
@@ -50,9 +77,9 @@ def test_sync_deduplicates_existing(mock_download):
     mock_download.return_value = [tx]
 
     session = MagicMock()
-    # tx already exists in DB
-    session.execute.return_value.scalar_one_or_none.return_value = tx
-    session.execute.return_value.scalars.return_value.all.return_value = [tx]
+    session.execute.side_effect = _make_execute_side_effect(
+        dedup_result=tx, all_txs_result=[tx]
+    )
 
     service = SyncService(session=session, llm=MagicMock())
     result = service.sync_bank("chase", since=date(2025, 1, 1), username="u", password="p")
@@ -70,10 +97,12 @@ def _make_transaction(tx_id: str = "tx1") -> Transaction:
     )
 
 
-def _make_session():
+def _make_session(dedup_result=None, all_txs_result=None):
     session = MagicMock()
-    session.execute.return_value.scalar_one_or_none.return_value = None
-    session.execute.return_value.scalars.return_value.all.return_value = []
+    session.execute.side_effect = _make_execute_side_effect(
+        dedup_result=dedup_result,
+        all_txs_result=all_txs_result if all_txs_result is not None else [],
+    )
     session.get.return_value = None
     return session
 

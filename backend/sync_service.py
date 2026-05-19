@@ -34,6 +34,8 @@ class SyncService:
 
         new_txs = []
         for tx in transactions:
+            if tx.id is None:
+                raise ValueError(f"Transaction missing id: {tx}")
             exists = self._session.execute(
                 select(Transaction).where(Transaction.id == tx.id)
             ).scalar_one_or_none()
@@ -89,11 +91,16 @@ class SyncService:
 
         new_txs = []
         for tx in transactions:
+            if tx.id is None:
+                raise ValueError(f"Transaction missing id: {tx}")
             exists = self._session.execute(
                 select(Transaction).where(Transaction.id == tx.id)
             ).scalar_one_or_none()
             if not exists:
                 new_txs.append(tx)
+
+        if not transactions:
+            return {"tx_count": 0, "total_parsed": 0}
 
         if new_txs:
             enrichments = self._categorizer.categorize(new_txs)
