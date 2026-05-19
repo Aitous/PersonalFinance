@@ -9,6 +9,8 @@ def _tx(description, amount, category="dining", days_ago=0, source="chase"):
     tx.category = category
     tx.date = date.today() - timedelta(days=days_ago)
     tx.source = source
+    tx.merchant_name = None
+    tx.merchant_type = None
     return tx
 
 # ── anomalies ──────────────────────────────────────────────────────────────

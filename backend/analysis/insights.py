@@ -148,7 +148,7 @@ def get_price_increases(txs: List[Transaction]) -> List[dict]:
 def get_merchant_breakdown(txs: List[Transaction]) -> List[dict]:
     groups: dict = defaultdict(list)
     for tx in txs:
-        key = _normalize_merchant(tx.description)
+        key = tx.merchant_name if tx.merchant_name else _normalize_merchant(tx.description)
         groups[key].append(tx)
 
     merchants = []
@@ -159,11 +159,17 @@ def get_merchant_breakdown(txs: List[Transaction]) -> List[dict]:
         for t in merchant_txs:
             cat_counts[t.category or "other"] += 1
         top_cat = max(cat_counts, key=lambda k: cat_counts[k])
+        type_counts: dict = defaultdict(int)
+        for t in merchant_txs:
+            if t.merchant_type:
+                type_counts[t.merchant_type] += 1
+        top_type = max(type_counts, key=lambda k: type_counts[k]) if type_counts else None
         merchants.append({
             "name": name,
             "total": round(total, 2),
             "tx_count": len(merchant_txs),
             "category": top_cat,
+            "merchant_type": top_type,
             "last_date": last_date.isoformat(),
         })
 
