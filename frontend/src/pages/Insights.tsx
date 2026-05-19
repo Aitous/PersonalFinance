@@ -127,7 +127,7 @@ export function Insights() {
                   <tr
                     key={m.name}
                     style={{ borderTop: "1px solid #f0f0f0", cursor: "pointer" }}
-                    onClick={() => navigate(`/transactions?q=${encodeURIComponent(m.name)}`)}
+                    onClick={() => navigate(`/transactions?merchant=${encodeURIComponent(m.name)}`)}
                     onMouseEnter={(e) => (e.currentTarget.style.background = "#f9fafb")}
                     onMouseLeave={(e) => (e.currentTarget.style.background = "")}
                   >

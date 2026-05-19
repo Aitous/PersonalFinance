@@ -25,10 +25,11 @@ export function Transactions() {
   const [searchMeta, setSearchMeta] = useState<{ embedded_count?: number; total?: number } | null>(null);
   const [isSearching, setIsSearching] = useState(false);
   const filterMonth = searchParams.get("month") ?? "";
+  const filterMerchant = searchParams.get("merchant") ?? "";
   const filterQ = searchParams.get("q") ?? "";
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Pre-populate search from URL ?q= param (e.g. clicked from Insights merchant row)
+  // Pre-populate search from URL ?q= param
   useEffect(() => {
     if (filterQ) setSearchQuery(filterQ);
   }, [filterQ]);
@@ -40,8 +41,9 @@ export function Transactions() {
       category: filterCategory || undefined,
       source: filterSource || undefined,
       month: filterMonth || undefined,
+      merchant: filterMerchant || undefined,
     }).then(setTxs);
-  }, [filterCategory, filterSource, filterMonth, searchQuery]);
+  }, [filterCategory, filterSource, filterMonth, filterMerchant, searchQuery]);
 
   // Debounced search
   useEffect(() => {
@@ -126,6 +128,12 @@ export function Transactions() {
         {filterMonth && (
           <div style={{ display: "flex", alignItems: "center", gap: 6, background: "#7c6af7", color: "#fff", padding: "5px 12px", borderRadius: 20, fontSize: 13 }}>
             <span>{filterMonth}</span>
+            <span onClick={() => navigate("/transactions")} style={{ cursor: "pointer", fontWeight: 700, fontSize: 16, lineHeight: 1 }}>×</span>
+          </div>
+        )}
+        {filterMerchant && (
+          <div style={{ display: "flex", alignItems: "center", gap: 6, background: "#10b981", color: "#fff", padding: "5px 12px", borderRadius: 20, fontSize: 13 }}>
+            <span>🏪 {filterMerchant}</span>
             <span onClick={() => navigate("/transactions")} style={{ cursor: "pointer", fontWeight: 700, fontSize: 16, lineHeight: 1 }}>×</span>
           </div>
         )}

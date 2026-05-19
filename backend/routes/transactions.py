@@ -1,7 +1,8 @@
+from datetime import date
 from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import select, extract
 from backend.db.database import get_session
 from backend.db.models import Subscription, Transaction
 
@@ -14,6 +15,8 @@ class CategoryUpdate(BaseModel):
 def list_transactions(
     category: Optional[str] = None,
     source: Optional[str] = None,
+    month: Optional[str] = None,  # format: YYYY-MM
+    merchant: Optional[str] = None,
 ):
     with get_session() as session:
         q = select(Transaction).order_by(Transaction.date.desc())
@@ -21,6 +24,14 @@ def list_transactions(
             q = q.where(Transaction.category == category)
         if source:
             q = q.where(Transaction.source == source)
+        if merchant:
+            q = q.where(Transaction.merchant_name == merchant)
+        if month:
+            year, mon = int(month[:4]), int(month[5:7])
+            q = q.where(
+                extract("year", Transaction.date) == year,
+                extract("month", Transaction.date) == mon,
+            )
         txs = session.execute(q).scalars().all()
         return [
             {
