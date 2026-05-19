@@ -20,7 +20,7 @@ def get_llm_provider(provider_override: "str | None" = None):
     if provider_name == "gemini":
         api_key = credentials_store.get_llm_key("gemini")
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel("gemini-1.5-flash")
+        model = genai.GenerativeModel("gemini-3.1-flash-lite")
         return GeminiProvider(model=model)
 
     raise ValueError(f"Unknown LLM provider: {provider_name}")
