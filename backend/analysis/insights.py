@@ -1,3 +1,4 @@
+import re
 import statistics
 from collections import defaultdict
 from datetime import date
@@ -7,6 +8,18 @@ from backend.analysis.subscription_detector import (
     _normalize, MONTHLY_DAYS_MIN, MONTHLY_DAYS_MAX, ANNUAL_DAYS_MAX,
 )
 from backend.db.models import Transaction
+
+# Strips payment terminal prefixes (Square, Toast, etc.) and store numbers
+_PREFIXES = re.compile(r'^(?:SAMPAY|TST\*|SQ\s*\*|UEP\*|SP\s+)\s*', re.IGNORECASE)
+_STORE_NUM = re.compile(r'\s*#\s*\d+.*$|\s+\d{5,}.*$')
+
+def _normalize_merchant(description: str) -> str:
+    """More aggressive normalization for merchant grouping in the breakdown view."""
+    s = description.upper().strip()
+    s = _PREFIXES.sub("", s).strip()   # strip terminal prefixes
+    s = _normalize(s)                   # strip trailing IDs / noise
+    s = _STORE_NUM.sub("", s).strip()   # strip store numbers like #0147
+    return s
 
 
 def get_spending_anomalies(txs: List[Transaction]) -> List[dict]:
@@ -135,7 +148,7 @@ def get_price_increases(txs: List[Transaction]) -> List[dict]:
 def get_merchant_breakdown(txs: List[Transaction]) -> List[dict]:
     groups: dict = defaultdict(list)
     for tx in txs:
-        key = _normalize(tx.description)
+        key = _normalize_merchant(tx.description)
         groups[key].append(tx)
 
     merchants = []
