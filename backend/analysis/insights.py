@@ -70,7 +70,7 @@ def get_duplicate_charges(txs: List[Transaction]) -> List[dict]:
         for i, tx1 in enumerate(sorted_txs):
             for tx2 in sorted_txs[i + 1:]:
                 days_apart = (tx2.date - tx1.date).days
-                if days_apart > 7:
+                if days_apart > 3:
                     break
                 if abs(tx1.amount - tx2.amount) < 0.01:
                     pair_key = (round(tx1.amount, 2), tx1.date.isoformat())
@@ -110,7 +110,14 @@ def get_price_increases(txs: List[Transaction]) -> List[dict]:
         if not prior:
             continue
 
-        prior_median = statistics.median(t.amount for t in prior)
+        prior_amounts = [t.amount for t in prior]
+        prior_avg = sum(prior_amounts) / len(prior_amounts)
+        prior_variance = (max(prior_amounts) - min(prior_amounts)) / prior_avg if prior_avg > 0 else 1.0
+        # Skip merchants with variable prior amounts — they're not subscriptions
+        if prior_variance > 0.10:
+            continue
+
+        prior_median = statistics.median(prior_amounts)
         last_amount = recent[-1].amount
 
         if prior_median > 0 and (last_amount - prior_median) / prior_median > 0.05:
