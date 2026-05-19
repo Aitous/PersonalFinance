@@ -80,10 +80,15 @@ class SyncService:
 
     def import_transactions(self, transactions: List[Transaction]) -> dict:
         """Import pre-parsed transactions (e.g. from CSV files), running full pipeline."""
+        if not transactions:
+            return {"tx_count": 0, "total_parsed": 0}
+
         # Deduplicate within the incoming list itself before querying the DB
         seen_ids: set = set()
         unique_transactions = []
         for tx in transactions:
+            if tx.id is None:
+                raise ValueError(f"Transaction missing id: {tx}")
             if tx.id not in seen_ids:
                 seen_ids.add(tx.id)
                 unique_transactions.append(tx)
@@ -91,16 +96,11 @@ class SyncService:
 
         new_txs = []
         for tx in transactions:
-            if tx.id is None:
-                raise ValueError(f"Transaction missing id: {tx}")
             exists = self._session.execute(
                 select(Transaction).where(Transaction.id == tx.id)
             ).scalar_one_or_none()
             if not exists:
                 new_txs.append(tx)
-
-        if not transactions:
-            return {"tx_count": 0, "total_parsed": 0}
 
         if new_txs:
             enrichments = self._categorizer.categorize(new_txs)
