@@ -119,36 +119,52 @@ async def upload_csv(bank: str, file: UploadFile = File(...)):
     return {"bank": bank, **result}
 
 
+import logging as _logging
+import threading as _threading
+
+_enrich_lock = _threading.Lock()
+_enrich_logger = _logging.getLogger(__name__)
+
+
 @router.post("/import/enrich")
 def enrich_existing(background_tasks: BackgroundTasks):
     """Enrich all transactions that are missing merchant_name."""
     from backend.analysis.categorizer import Categorizer
 
     def _run():
-        llm = get_llm_provider()
-        categorizer = Categorizer(llm=llm)
-        with get_session() as session:
-            txs = session.execute(
-                select(Transaction).where(Transaction.merchant_name.is_(None))
-            ).scalars().all()
-            session.expunge_all()
-
-        if not txs:
+        if not _enrich_lock.acquire(blocking=False):
+            _enrich_logger.info("Enrichment already running, skipping duplicate request")
             return
+        try:
+            llm = get_llm_provider()
+            categorizer = Categorizer(llm=llm)
+            with get_session() as session:
+                txs = session.execute(
+                    select(Transaction).where(Transaction.merchant_name.is_(None))
+                ).scalars().all()
+                session.expunge_all()
 
-        enrichments = categorizer.categorize(list(txs))
+            if not txs:
+                return
 
-        with get_session() as session:
-            for tx_id, enrich in enrichments.items():
-                tx = session.get(Transaction, tx_id)
-                if tx:
-                    tx.merchant_name = enrich.merchant_name
-                    tx.city = enrich.city
-                    tx.is_online = enrich.is_online
-                    tx.merchant_type = enrich.merchant_type
-                    if not tx.category or tx.category == "other":
-                        tx.category = enrich.category
-            session.commit()
+            enrichments = categorizer.categorize(list(txs))
+
+            with get_session() as session:
+                for tx_id, enrich in enrichments.items():
+                    tx = session.get(Transaction, tx_id)
+                    if tx:
+                        tx.merchant_name = enrich.merchant_name
+                        tx.city = enrich.city
+                        tx.is_online = enrich.is_online
+                        tx.merchant_type = enrich.merchant_type
+                        if not tx.category or tx.category == "other":
+                            tx.category = enrich.category
+                session.commit()
+            _enrich_logger.info("Enrichment complete: %d transactions processed", len(txs))
+        except Exception:
+            _enrich_logger.exception("Enrichment background task failed")
+        finally:
+            _enrich_lock.release()
 
     background_tasks.add_task(_run)
     return {"status": "started", "message": "Enriching transactions in background"}
