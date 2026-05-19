@@ -50,6 +50,9 @@ export const importFromFolder = () =>
 export const getInsights = (merchantDays = 90) =>
   api.get("/analysis/insights", { params: { merchant_days: merchantDays } }).then((r) => r.data);
 
+export const triggerEnrichment = () =>
+  api.post("/import/enrich").then((r) => r.data);
+
 export const uploadCSV = (bank: string, file: File) => {
   const form = new FormData();
   form.append("file", file);
