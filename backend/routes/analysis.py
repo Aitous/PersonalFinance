@@ -79,6 +79,7 @@ def get_insights(merchant_days: int = 90):
         all_txs = session.execute(select(Transaction)).scalars().all()
         spending_txs = [tx for tx in all_txs if not _is_payment(tx) and tx.amount > 0]
         merchant_txs = [tx for tx in spending_txs if tx.date >= since]
+        session.expunge_all()
 
     return {
         "alerts": {
@@ -102,7 +103,7 @@ def get_savings_tips(body: SavingsTipsRequest = SavingsTipsRequest()):
     period_end = date.today().strftime("%b %Y")
     period = f"{period_start}–{period_end}"
 
-    llm = get_llm_provider(provider_override=body.provider)
+    llm = get_llm_provider(provider_override=body.provider, use_pro=True)
     advisor = SavingsAdvisor(llm=llm)
     tips = advisor.get_tips(summary, period=period)
     return {"tips": tips, "period": period}
