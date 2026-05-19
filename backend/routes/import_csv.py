@@ -124,17 +124,16 @@ import threading as _threading
 
 _enrich_lock = _threading.Lock()
 _enrich_logger = _logging.getLogger(__name__)
-_enrich_state: dict = {"running": False, "total": 0, "done": 0, "error": None}
+_enrich_state: dict = {"status": "idle", "total": 0, "done": 0, "error": None}
 
 
 @router.get("/import/enrich/status")
 def enrich_status():
-    remaining = _enrich_state["total"] - _enrich_state["done"]
     return {
-        "running": _enrich_state["running"],
+        "status": _enrich_state["status"],   # idle | pending | running | done | error
         "total": _enrich_state["total"],
         "done": _enrich_state["done"],
-        "remaining": remaining,
+        "remaining": _enrich_state["total"] - _enrich_state["done"],
         "error": _enrich_state["error"],
     }
 
@@ -148,7 +147,7 @@ def enrich_existing(background_tasks: BackgroundTasks):
         if not _enrich_lock.acquire(blocking=False):
             _enrich_logger.info("Enrichment already running, skipping duplicate request")
             return
-        _enrich_state.update({"running": True, "total": 0, "done": 0, "error": None})
+        _enrich_state.update({"status": "running", "total": 0, "done": 0, "error": None})
         try:
             llm = get_llm_provider()
             categorizer = Categorizer(llm=llm)
@@ -176,13 +175,15 @@ def enrich_existing(background_tasks: BackgroundTasks):
                             tx.category = enrich.category
                     _enrich_state["done"] += 1
                 session.commit()
+            _enrich_state["status"] = "done"
             _enrich_logger.info("Enrichment complete: %d transactions processed", len(txs))
         except Exception as exc:
             _enrich_logger.exception("Enrichment background task failed")
+            _enrich_state["status"] = "error"
             _enrich_state["error"] = str(exc)
         finally:
-            _enrich_state["running"] = False
             _enrich_lock.release()
 
+    _enrich_state.update({"status": "pending", "total": 0, "done": 0, "error": None})
     background_tasks.add_task(_run)
-    return {"status": "started", "message": "Enriching transactions in background"}
+    return {"status": "pending", "message": "Enriching transactions in background"}

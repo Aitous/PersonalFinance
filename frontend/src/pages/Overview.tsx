@@ -60,23 +60,22 @@ export function Overview() {
     setEnrichMsg("Starting enrichment…");
     try {
       await triggerEnrichment();
-      // Poll until the job finishes
       const poll = async (): Promise<void> => {
-        const status = await getEnrichStatus();
-        if (status.error) {
-          setEnrichMsg(`Enrichment failed: ${status.error}`);
+        const s = await getEnrichStatus();
+        if (s.status === "error") {
+          setEnrichMsg(`Enrichment failed: ${s.error}`);
           setEnriching(false);
-          return;
-        }
-        if (status.running || status.total === 0) {
-          const progress = status.total > 0
-            ? ` (${status.done}/${status.total})`
-            : "";
+        } else if (s.status === "done") {
+          setEnrichMsg(`Done — ${s.done} transactions enriched.`);
+          setEnriching(false);
+        } else if (s.status === "running") {
+          const progress = s.total > 0 ? ` (${s.done}/${s.total})` : "";
           setEnrichMsg(`Enriching transactions${progress}…`);
           setTimeout(poll, 2000);
         } else {
-          setEnrichMsg(`Done — ${status.done} transactions enriched.`);
-          setEnriching(false);
+          // pending — job queued, not started yet
+          setEnrichMsg("Enrichment queued, starting…");
+          setTimeout(poll, 1000);
         }
       };
       setTimeout(poll, 1000);
