@@ -5,6 +5,7 @@ const links = [
   { to: "/transactions", label: "Transactions", icon: "📋" },
   { to: "/categories", label: "Categories", icon: "🏷️" },
   { to: "/insights", label: "Insights", icon: "⚡" },
+  { to: "/reports", label: "Reports", icon: "📈" },
   { to: "/subscriptions", label: "Recurring", icon: "🔄" },
   { to: "/savings", label: "Savings Tips", icon: "💡" },
   { to: "/settings", label: "Settings", icon: "⚙️" },
