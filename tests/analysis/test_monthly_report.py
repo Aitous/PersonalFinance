@@ -94,3 +94,52 @@ def test_prior_month_wraps_to_december_for_january():
     result = get_monthly_report_data(txs, year=2026, month=1)
     assert result["total"] == 150.0
     assert result["prev_total"] == 80.0
+
+
+def test_subscriptions_due_within_30_days():
+    from backend.analysis.monthly_report import get_subscriptions_due
+    from datetime import date
+
+    today = date(2026, 4, 30)  # last day of report month
+
+    monthly_sub = MagicMock()
+    monthly_sub.description = "Netflix"
+    monthly_sub.amount = 15.99
+    monthly_sub.frequency = "monthly"
+    monthly_sub.last_charged = date(2026, 4, 3)   # next = May 3 — within 30 days
+    monthly_sub.active = True
+
+    annual_sub = MagicMock()
+    annual_sub.description = "Adobe CC"
+    annual_sub.amount = 599.0
+    annual_sub.frequency = "annual"
+    annual_sub.last_charged = date(2025, 5, 10)   # next = 2026-05-10 — within 30 days
+    annual_sub.active = True
+
+    far_sub = MagicMock()
+    far_sub.description = "AWS"
+    far_sub.amount = 9.99
+    far_sub.frequency = "monthly"
+    far_sub.last_charged = date(2026, 3, 1)        # next = Mar 31 — already past
+    far_sub.active = True
+
+    result = get_subscriptions_due([monthly_sub, annual_sub, far_sub], report_month_end=today)
+    names = [r["description"] for r in result]
+    assert "Netflix" in names
+    assert "Adobe CC" in names
+    assert "AWS" not in names
+
+
+def test_inactive_subscriptions_excluded():
+    from backend.analysis.monthly_report import get_subscriptions_due
+    from datetime import date
+
+    sub = MagicMock()
+    sub.description = "Old Service"
+    sub.amount = 9.99
+    sub.frequency = "monthly"
+    sub.last_charged = date(2026, 4, 1)
+    sub.active = False
+
+    result = get_subscriptions_due([sub], report_month_end=date(2026, 4, 30))
+    assert result == []

@@ -63,3 +63,25 @@ def get_monthly_report_data(txs: List[Transaction], year: int, month: int) -> di
         "categories": categories,
         "merchants": merchants,
     }
+
+
+def get_subscriptions_due(subs, report_month_end: date) -> list:
+    """
+    Returns subscriptions whose estimated next charge falls within 30 days after report_month_end.
+    """
+    window_end = report_month_end + timedelta(days=30)
+
+    due = []
+    for sub in subs:
+        if not sub.active or sub.last_charged is None:
+            continue
+        days = 30 if sub.frequency == "monthly" else 365
+        next_date = sub.last_charged + timedelta(days=days)
+        if report_month_end < next_date <= window_end:
+            due.append({
+                "description": sub.description,
+                "amount": sub.amount,
+                "next_date": next_date.isoformat(),
+            })
+
+    return sorted(due, key=lambda x: x["next_date"])
