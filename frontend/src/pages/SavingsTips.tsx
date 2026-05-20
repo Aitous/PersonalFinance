@@ -6,13 +6,14 @@ export function SavingsTips() {
   const [period, setPeriod] = useState("");
   const [loading, setLoading] = useState(false);
   const [provider, setProvider] = useState("claude");
+  const [days, setDays] = useState(90);
 
   useEffect(() => { getLLMConfig().then((c) => setProvider(c.provider)); }, []);
 
   const handleGenerate = async () => {
     setLoading(true);
     try {
-      const result = await getSavingsTips(provider);
+      const result = await getSavingsTips(provider, days);
       setTips(result.tips);
       setPeriod(result.period);
     } finally {
@@ -26,6 +27,13 @@ export function SavingsTips() {
       <p style={{ color: "#888", marginBottom: 24 }}>AI-generated suggestions based on your last 3 months of spending</p>
 
       <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 24 }}>
+        <select value={days} onChange={(e) => setDays(Number(e.target.value))}
+          style={{ padding: "8px 12px", borderRadius: 6, border: "1px solid #ddd", fontSize: 14 }}>
+          <option value={30}>Last 30 days</option>
+          <option value={90}>Last 3 months</option>
+          <option value={180}>Last 6 months</option>
+          <option value={365}>Last year</option>
+        </select>
         <select value={provider} onChange={(e) => setProvider(e.target.value)}
           style={{ padding: "8px 12px", borderRadius: 6, border: "1px solid #ddd", fontSize: 14 }}>
           <option value="claude">Claude (Anthropic)</option>

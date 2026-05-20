@@ -14,6 +14,7 @@ BANK_SCHEMAS = {
         "amount_col": "Amount",
         "date_fmt": "%m/%d/%Y",
         "extra_cols": ["Category", "Type", "Memo"],
+        "negate": True,   # Chase: debits are negative, flip to positive
     },
     "discover": {
         "date_col": "Trans. Date",
@@ -21,6 +22,7 @@ BANK_SCHEMAS = {
         "amount_col": "Amount",
         "date_fmt": "%m/%d/%Y",
         "extra_cols": ["Category"],
+        "negate": False,  # Discover: debits are already positive
     },
     "amex": {
         "date_col": "Date",
@@ -28,6 +30,7 @@ BANK_SCHEMAS = {
         "amount_col": "Amount",
         "date_fmt": "%m/%d/%Y",
         "extra_cols": ["Category", "City/State", "Country"],
+        "negate": False,  # Amex: debits are already positive
     },
 }
 
@@ -49,7 +52,8 @@ def parse_csv(file_path: Path, source: str) -> List[Transaction]:
                 description = row[schema["description_col"]].strip()
                 amount_str = row[schema["amount_col"]].strip().replace(",", "")
                 tx_date = datetime.strptime(raw_date, schema["date_fmt"]).date()
-                amount = float(amount_str)
+                raw_amount = float(amount_str)
+                amount = -raw_amount if schema.get("negate") else raw_amount
             except (ValueError, KeyError):
                 continue
 

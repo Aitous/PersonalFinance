@@ -28,31 +28,86 @@ class SubscriptionDetector:
             groups[key].append(tx)
 
         subscriptions: List[Subscription] = []
+        seen_ids: set = set()
+
         for description, txs in groups.items():
-            if len(txs) < 3:  # Require at least 3 occurrences to reduce false positives
+            if len(txs) < 3:
                 continue
             txs_sorted = sorted(txs, key=lambda t: t.date)
             frequency = self._detect_frequency(txs_sorted)
-            if frequency is None:
-                continue
-            last_charged = txs_sorted[-1].date
-            base_amount = txs_sorted[-1].amount
-            sub_id = hashlib.md5(description.encode()).hexdigest()
-            # Mark inactive if monthly and last charge was more than 40 days ago
-            if frequency == "monthly":
+            if frequency is not None:
+                last_charged = txs_sorted[-1].date
+                base_amount = txs_sorted[-1].amount
+                sub_id = hashlib.md5(description.encode()).hexdigest()
                 days_since = (date.today() - last_charged).days
-                active = days_since <= 40
-            else:
-                active = True
-            subscriptions.append(Subscription(
-                id=sub_id,
-                description=description,
-                amount=base_amount,
-                frequency=frequency,
-                last_charged=last_charged,
-                active=active,
-            ))
+                active = days_since <= 40 if frequency == "monthly" else True
+                subscriptions.append(Subscription(
+                    id=sub_id,
+                    description=description,
+                    amount=base_amount,
+                    frequency=frequency,
+                    last_charged=last_charged,
+                    active=active,
+                ))
+                seen_ids.add(sub_id)
+                continue
+
+            # Usage-based detection: ≥5 charges, avg gap < 20 days, spans ≥2 calendar months
+            usage = self._detect_usage_based(description, txs_sorted)
+            if usage:
+                sub_id = hashlib.md5((description + "_usage").encode()).hexdigest()
+                if sub_id not in seen_ids:
+                    subscriptions.append(usage)
+                    seen_ids.add(sub_id)
+
         return subscriptions
+
+    _USAGE_BASED_TYPES = {
+        "software subscription", "saas", "cloud service", "cloud computing",
+        "api service", "software", "streaming service", "digital service",
+    }
+
+    def _detect_usage_based(self, description: str, txs_sorted: List[Transaction]) -> Optional[Subscription]:
+        if len(txs_sorted) < 5:
+            return None
+
+        # Only apply to software/cloud merchants — not grocery stores, cafes, etc.
+        merchant_types = {tx.merchant_type.lower() for tx in txs_sorted if tx.merchant_type}
+        if not any(t in self._USAGE_BASED_TYPES for t in merchant_types):
+            return None
+
+        gaps = [(txs_sorted[i+1].date - txs_sorted[i].date).days for i in range(len(txs_sorted)-1)]
+        avg_gap = sum(gaps) / len(gaps)
+        if avg_gap >= MONTHLY_DAYS_MIN:
+            return None  # not usage-based — gaps too long
+
+        months_seen = {tx.date.strftime("%Y-%m") for tx in txs_sorted}
+        if len(months_seen) < 2:
+            return None  # all in one month — could be a one-off
+
+        # Estimate monthly cost from most recent complete month
+        from collections import defaultdict as _dd
+        by_month: dict = _dd(float)
+        for tx in txs_sorted:
+            by_month[tx.date.strftime("%Y-%m")] += tx.amount
+        today = date.today()
+        current_month_key = today.strftime("%Y-%m")
+        complete_months = {m: v for m, v in by_month.items() if m != current_month_key}
+        if not complete_months:
+            return None
+        avg_monthly = sum(complete_months.values()) / len(complete_months)
+
+        last_charged = txs_sorted[-1].date
+        days_since = (today - last_charged).days
+        sub_id = hashlib.md5((description + "_usage").encode()).hexdigest()
+        return Subscription(
+            id=sub_id,
+            description=f"{description} (usage-based)",
+            amount=round(avg_monthly, 2),
+            frequency="monthly",
+            last_charged=last_charged,
+            active=days_since <= 40,
+        )
 
     def _detect_frequency(self, txs: List[Transaction]) -> Optional[str]:
         if len(txs) < 2:

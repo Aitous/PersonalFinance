@@ -95,11 +95,13 @@ def get_insights(merchant_days: int = 90):
 
 class SavingsTipsRequest(BaseModel):
     provider: Optional[str] = None
+    days: int = 90
 
 @router.post("/analysis/savings-tips")
 def get_savings_tips(body: SavingsTipsRequest = SavingsTipsRequest()):
-    summary = get_category_summary()
-    period_start = (date.today() - timedelta(days=90)).strftime("%b %Y")
+    days = max(7, min(body.days, 730))
+    summary = get_category_summary(days=days)
+    period_start = (date.today() - timedelta(days=days)).strftime("%b %Y")
     period_end = date.today().strftime("%b %Y")
     period = f"{period_start}–{period_end}"
 

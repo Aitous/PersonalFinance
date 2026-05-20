@@ -14,14 +14,20 @@ export const getSubscriptions = () =>
 export const updateSubscription = (id: string, data: object) =>
   api.patch(`/subscriptions/${id}`, data).then((r) => r.data);
 
+export const createSubscription = (data: { description: string; amount: number; frequency: string }) =>
+  api.post("/subscriptions", data).then((r) => r.data);
+
+export const deleteSubscription = (id: string) =>
+  api.delete(`/subscriptions/${id}`).then((r) => r.data);
+
 export const getOverview = () =>
   api.get("/analysis/overview").then((r) => r.data);
 
 export const getCategorySummary = (days = 90) =>
   api.get("/analysis/category-summary", { params: { days } }).then((r) => r.data);
 
-export const getSavingsTips = (provider?: string) =>
-  api.post("/analysis/savings-tips", { provider }).then((r) => r.data);
+export const getSavingsTips = (provider?: string, days?: number) =>
+  api.post("/analysis/savings-tips", { provider, days }).then((r) => r.data);
 
 export const triggerSync = (bank: string, since: string) =>
   api.post("/sync", { bank, since }).then((r) => r.data);
@@ -55,6 +61,9 @@ export const triggerEnrichment = () =>
 
 export const getEnrichStatus = () =>
   api.get("/import/enrich/status").then((r) => r.data);
+
+export const triggerRecategorize = () =>
+  api.post("/import/recategorize").then((r) => r.data);
 
 export const redetectSubscriptions = () =>
   api.post("/subscriptions/redetect").then((r) => r.data);

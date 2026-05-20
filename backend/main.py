@@ -5,6 +5,8 @@ from backend.routes.transactions import router as tx_router
 from backend.routes.analysis import router as analysis_router
 from backend.routes.sync import router as sync_router
 from backend.routes.settings import router as settings_router
+from backend.routes.import_csv import router as import_router
+from backend.routes.search import router as search_router, _embed_all
 
 app = FastAPI(title="PersonalFinance API")
 
@@ -19,10 +21,14 @@ app.include_router(tx_router)
 app.include_router(analysis_router)
 app.include_router(sync_router)
 app.include_router(settings_router)
+app.include_router(import_router)
+app.include_router(search_router)
 
 @app.on_event("startup")
 def startup():
     init_db()
+    import threading
+    threading.Thread(target=_embed_all, daemon=True).start()
 
 @app.get("/health")
 def health():

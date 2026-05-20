@@ -21,6 +21,11 @@ export function Transactions() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [filterCategory, setFilterCategory] = useState("");
   const [filterSource, setFilterSource] = useState("");
+  const [txType, setTxType] = useState<"spending" | "refunds">("spending");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [sortField, setSortField] = useState<"date" | "amount">("date");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [searchQuery, setSearchQuery] = useState("");
   const [searchMode, setSearchMode] = useState<"hybrid" | "keyword" | "semantic">("hybrid");
   const [searchMeta, setSearchMeta] = useState<{ embedded_count?: number; total?: number } | null>(null);
@@ -28,6 +33,7 @@ export function Transactions() {
   const filterMonth = searchParams.get("month") ?? "";
   const filterMerchant = searchParams.get("merchant") ?? "";
   const filterQ = searchParams.get("q") ?? "";
+  const filterIds = searchParams.get("ids") ?? "";
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Pre-populate search from URL ?q= param
@@ -43,8 +49,12 @@ export function Transactions() {
       source: filterSource || undefined,
       month: filterMonth || undefined,
       merchant: filterMerchant || undefined,
+      tx_type: txType,
+      date_from: dateFrom || undefined,
+      date_to: dateTo || undefined,
+      ids: filterIds || undefined,
     }).then(setTxs);
-  }, [filterCategory, filterSource, filterMonth, filterMerchant, searchQuery]);
+  }, [filterCategory, filterSource, filterMonth, filterMerchant, searchQuery, txType, dateFrom, dateTo, filterIds]);
 
   // Debounced search
   useEffect(() => {
@@ -69,9 +79,27 @@ export function Transactions() {
     setEditingId(null);
   };
 
+  const toggleSort = (field: "date" | "amount") => {
+    if (sortField === field) setSortDir((d) => d === "asc" ? "desc" : "asc");
+    else { setSortField(field); setSortDir("desc"); }
+  };
+
+  const sortedTxs = [...txs].sort((a, b) => {
+    const mul = sortDir === "asc" ? 1 : -1;
+    if (sortField === "amount") return mul * (a.amount - b.amount);
+    return mul * (a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+  });
+
   return (
     <div>
       <h1 style={{ fontSize: 24, marginBottom: 20 }}>Transactions</h1>
+
+      {filterIds && (
+        <div style={{ background: "#fef3c7", border: "1px solid #f59e0b", borderRadius: 8, padding: "10px 16px", marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13 }}>
+          <span>⚠ Showing {txs.length} flagged transaction{txs.length !== 1 ? "s" : ""} from an insight alert</span>
+          <span onClick={() => navigate("/transactions")} style={{ cursor: "pointer", color: "#92400e", fontWeight: 600 }}>Clear ×</span>
+        </div>
+      )}
 
       {/* Search bar */}
       <div style={{ marginBottom: 16 }}>
@@ -114,6 +142,17 @@ export function Transactions() {
       </div>
 
       <div style={{ display: "flex", gap: 12, marginBottom: 20, alignItems: "center", flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 4, background: "#f3f4f6", borderRadius: 8, padding: 3 }}>
+          {(["spending", "refunds"] as const).map((t) => (
+            <button key={t} onClick={() => setTxType(t)} style={{
+              padding: "5px 10px", borderRadius: 6, fontSize: 12, border: "none", cursor: "pointer",
+              background: txType === t ? (t === "refunds" ? "#10b981" : "#7c6af7") : "transparent",
+              color: txType === t ? "#fff" : "#6b7280",
+              fontWeight: txType === t ? 600 : 400,
+              textTransform: "capitalize",
+            }}>{t}</button>
+          ))}
+        </div>
         <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)}
           style={{ padding: "6px 12px", borderRadius: 6, border: "1px solid #ddd", fontSize: 14 }}>
           <option value="">All Categories</option>
@@ -126,6 +165,13 @@ export function Transactions() {
           <option value="discover">Discover</option>
           <option value="amex">Amex</option>
         </select>
+        <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)}
+          title="From date"
+          style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid #ddd", fontSize: 14, color: dateFrom ? "#111" : "#9ca3af" }} />
+        <span style={{ color: "#9ca3af", fontSize: 13 }}>—</span>
+        <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)}
+          title="To date"
+          style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid #ddd", fontSize: 14, color: dateTo ? "#111" : "#9ca3af" }} />
         {filterMonth && (
           <div style={{ display: "flex", alignItems: "center", gap: 6, background: "#7c6af7", color: "#fff", padding: "5px 12px", borderRadius: 20, fontSize: 13 }}>
             <span>{filterMonth}</span>
@@ -141,27 +187,48 @@ export function Transactions() {
         {txs.length > 0 && (
           <span style={{ color: "#9ca3af", fontSize: 13, marginLeft: "auto" }}>{txs.length} transactions</span>
         )}
+        {txs.length > 0 && (
+          <a href={(() => {
+            const p = new URLSearchParams();
+            if (filterCategory) p.set("category", filterCategory);
+            if (filterSource) p.set("source", filterSource);
+            if (filterMonth) p.set("month", filterMonth);
+            if (filterMerchant) p.set("merchant", filterMerchant);
+            if (dateFrom) p.set("date_from", dateFrom);
+            if (dateTo) p.set("date_to", dateTo);
+            p.set("tx_type", txType);
+            return `http://localhost:8000/transactions/export.csv?${p.toString()}`;
+          })()} download="transactions.csv"
+            style={{ background: "#f3f4f6", color: "#374151", borderRadius: 6, padding: "5px 12px", fontSize: 12, textDecoration: "none", border: "1px solid #e5e7eb" }}>
+            ↓ CSV
+          </a>
+        )}
       </div>
 
       <div style={{ background: "#fff", borderRadius: 10, boxShadow: "0 1px 4px rgba(0,0,0,0.07)", overflow: "hidden" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
           <thead>
             <tr style={{ background: "#f0f0f8", textAlign: "left" }}>
-              <th style={{ padding: "12px 16px" }}>Date</th>
+              <th onClick={() => toggleSort("date")} style={{ padding: "12px 16px", cursor: "pointer", userSelect: "none", whiteSpace: "nowrap" }}>
+                Date {sortField === "date" ? (sortDir === "desc" ? "↓" : "↑") : <span style={{ color: "#c4c4d4" }}>↕</span>}
+              </th>
               <th style={{ padding: "12px 16px" }}>Description</th>
               <th style={{ padding: "12px 16px" }}>Bank</th>
               <th style={{ padding: "12px 16px" }}>Category</th>
-              <th style={{ padding: "12px 16px", textAlign: "right" }}>Amount</th>
+              <th onClick={() => toggleSort("amount")} style={{ padding: "12px 16px", textAlign: "right", cursor: "pointer", userSelect: "none", whiteSpace: "nowrap" }}>
+                Amount {sortField === "amount" ? (sortDir === "desc" ? "↓" : "↑") : <span style={{ color: "#c4c4d4" }}>↕</span>}
+              </th>
             </tr>
           </thead>
           <tbody>
-            {txs.map((tx) => {
+            {sortedTxs.map((tx) => {
               const isExpanded = expandedId === tx.id;
+              const isRefund = tx.amount < 0;
               return (
                 <>
                   <tr
                     key={tx.id}
-                    style={{ borderTop: "1px solid #f0f0f0", cursor: "pointer", background: isExpanded ? "#f9fafb" : undefined }}
+                    style={{ borderTop: "1px solid #f0f0f0", cursor: "pointer", background: isExpanded ? "#f9fafb" : isRefund ? "#f0fdf4" : undefined }}
                     onClick={() => setExpandedId(isExpanded ? null : tx.id)}
                   >
                     <td style={{ padding: "10px 16px", color: "#888" }}>{tx.date}</td>

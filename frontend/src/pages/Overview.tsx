@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { getOverview, triggerSync, getConfiguredBanks, importFromFolder, uploadCSV, triggerEnrichment, getEnrichStatus } from "../api/client";
+import { getOverview, triggerSync, getConfiguredBanks, importFromFolder, uploadCSV, triggerEnrichment, getEnrichStatus, triggerRecategorize } from "../api/client";
 import { SpendingLineChart } from "../components/SpendingLineChart";
 import { CategoryStackedBar } from "../components/CategoryStackedBar";
 
@@ -52,6 +52,35 @@ export function Overview() {
       setImportMsg(`Import failed: ${e?.response?.data?.detail ?? e.message}`);
     } finally {
       setImporting(false);
+    }
+  };
+
+  const handleRecategorize = async () => {
+    setEnriching(true);
+    setEnrichMsg("Starting re-categorization…");
+    try {
+      await triggerRecategorize();
+      const poll = async (): Promise<void> => {
+        const s = await getEnrichStatus();
+        if (s.status === "error") {
+          setEnrichMsg(`Re-categorize failed: ${s.error}`);
+          setEnriching(false);
+        } else if (s.status === "done") {
+          setEnrichMsg(`Done — ${s.done} transactions re-categorized.`);
+          setEnriching(false);
+        } else if (s.status === "running") {
+          const progress = s.total > 0 ? ` (${s.done}/${s.total})` : "";
+          setEnrichMsg(`Re-categorizing${progress}…`);
+          setTimeout(poll, 2000);
+        } else {
+          setEnrichMsg("Re-categorize queued, starting…");
+          setTimeout(poll, 1000);
+        }
+      };
+      setTimeout(poll, 1000);
+    } catch (e: any) {
+      setEnrichMsg(`Re-categorize failed: ${e?.response?.data?.detail ?? e.message}`);
+      setEnriching(false);
     }
   };
 
@@ -122,7 +151,17 @@ export function Overview() {
   const prevMonth = months[months.length - 2] ?? "";
   const currentTotal = data.monthly[currentMonth]?.total ?? 0;
   const prevTotal = data.monthly[prevMonth]?.total ?? 0;
-  const pctChange = prevTotal !== 0 ? (((currentTotal - prevTotal) / prevTotal) * 100).toFixed(1) : null;
+
+  // Normalize current month to a full-month pace for fair comparison
+  const today = new Date();
+  const isCurrentMonth = currentMonth === `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
+  const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+  const daysPassed = today.getDate();
+  const currentPace = isCurrentMonth && daysPassed < daysInMonth
+    ? (currentTotal / daysPassed) * daysInMonth
+    : currentTotal;
+  const pctChange = prevTotal !== 0 ? (((currentPace - prevTotal) / prevTotal) * 100).toFixed(1) : null;
+  const isPaceEstimate = isCurrentMonth && daysPassed < daysInMonth;
 
   return (
     <div>
@@ -161,14 +200,20 @@ export function Overview() {
             <input ref={fileRef} type="file" accept=".csv,.CSV" style={{ display: "none" }} onChange={handleFileUpload} disabled={importing} />
           </label>
         </div>
-        <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
           <button onClick={handleEnrich} disabled={enriching} style={{
             background: "#10b981", color: "#fff", border: "none",
             borderRadius: 8, padding: "7px 16px", cursor: "pointer", fontSize: 13,
           }}>
-            {enriching ? "Enriching…" : "Enrich all transactions with AI"}
+            {enriching ? "Enriching…" : "Enrich new transactions"}
           </button>
-          <span style={{ color: "#6b7280", fontSize: 12 }}>Extracts merchant names, cities, and types for all banks</span>
+          <button onClick={handleRecategorize} disabled={enriching} style={{
+            background: "#7c6af7", color: "#fff", border: "none",
+            borderRadius: 8, padding: "7px 16px", cursor: "pointer", fontSize: 13,
+          }}>
+            {enriching ? "Working…" : "Re-categorize all with AI"}
+          </button>
+          <span style={{ color: "#6b7280", fontSize: 12 }}>Re-categorize updates all categories using AI</span>
         </div>
         {importMsg && (
           <div style={{ marginTop: 10, fontSize: 13, color: importMsg.startsWith("Import") && !importMsg.includes("failed") ? "#0a0" : "#e05" }}>
@@ -188,10 +233,17 @@ export function Overview() {
           <div style={{ fontSize: 28, fontWeight: 700 }}>${currentTotal.toFixed(2)}</div>
         </div>
         <div style={CARD_STYLE}>
-          <div style={{ color: "#888", fontSize: 12, marginBottom: 4 }}>vs Last Month</div>
+          <div style={{ color: "#888", fontSize: 12, marginBottom: 4 }}>
+            vs Last Month{isPaceEstimate ? " (projected pace)" : ""}
+          </div>
           <div style={{ fontSize: 28, fontWeight: 700, color: pctChange === null ? "#888" : Number(pctChange) > 0 ? "#e05" : "#0a0" }}>
             {pctChange === null ? "—" : `${Number(pctChange) > 0 ? "+" : ""}${pctChange}%`}
           </div>
+          {isPaceEstimate && (
+            <div style={{ color: "#9ca3af", fontSize: 11, marginTop: 2 }}>
+              Based on {daysPassed}d of {daysInMonth}
+            </div>
+          )}
         </div>
       </div>
 

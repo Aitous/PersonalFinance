@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getInsights } from "../api/client";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, LabelList } from "recharts";
 
 const SECTION = {
   background: "#fff", borderRadius: 10, padding: 24,
@@ -55,32 +55,44 @@ export function Insights() {
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {alerts.anomalies.map((a: any) => (
-              <div key={a.category} style={{ background: "#fef3c7", borderLeft: "3px solid #f59e0b", padding: "10px 14px", borderRadius: 6 }}>
+              <div key={a.category} onClick={() => navigate(`/transactions?ids=${encodeURIComponent(a.tx_ids.join(","))}`)}
+                style={{ background: "#fef3c7", borderLeft: "3px solid #f59e0b", padding: "10px 14px", borderRadius: 6, cursor: "pointer" }}
+                onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.8")}
+                onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}>
                 <div style={{ fontWeight: 600, color: "#92400e" }}>
                   ⚠ {a.category.charAt(0).toUpperCase() + a.category.slice(1)} spend is {a.ratio}× your 3-month average
                 </div>
-                <div style={{ color: "#78350f", marginTop: 2, fontSize: 13 }}>
-                  ${a.current_amount.toFixed(2)} this month vs. ${a.avg_amount.toFixed(2)} avg — {a.tx_count} transactions
+                <div style={{ color: "#78350f", marginTop: 2, fontSize: 13, display: "flex", justifyContent: "space-between" }}>
+                  <span>${a.current_amount.toFixed(2)} this month vs. ${a.avg_amount.toFixed(2)} avg — {a.tx_count} transactions</span>
+                  <span style={{ fontSize: 11, opacity: 0.7 }}>View transactions →</span>
                 </div>
               </div>
             ))}
             {alerts.duplicates.map((d: any, i: number) => (
-              <div key={i} style={{ background: "#fee2e2", borderLeft: "3px solid #ef4444", padding: "10px 14px", borderRadius: 6 }}>
+              <div key={i} onClick={() => navigate(`/transactions?ids=${encodeURIComponent(d.tx_ids.join(","))}`)}
+                style={{ background: "#fee2e2", borderLeft: "3px solid #ef4444", padding: "10px 14px", borderRadius: 6, cursor: "pointer" }}
+                onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.8")}
+                onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}>
                 <div style={{ fontWeight: 600, color: "#991b1b" }}>
                   🔁 Possible duplicate: {d.merchant}
                 </div>
-                <div style={{ color: "#7f1d1d", marginTop: 2, fontSize: 13 }}>
-                  ${d.amount.toFixed(2)} charged {d.dates.length} times ({d.dates.join(" & ")})
+                <div style={{ color: "#7f1d1d", marginTop: 2, fontSize: 13, display: "flex", justifyContent: "space-between" }}>
+                  <span>${d.amount.toFixed(2)} charged {d.dates.length} times ({d.dates.join(" & ")})</span>
+                  <span style={{ fontSize: 11, opacity: 0.7 }}>View transactions →</span>
                 </div>
               </div>
             ))}
             {alerts.price_increases.map((p: any, i: number) => (
-              <div key={i} style={{ background: "#ede9fe", borderLeft: "3px solid #7c3aed", padding: "10px 14px", borderRadius: 6 }}>
+              <div key={i} onClick={() => navigate(`/transactions?ids=${encodeURIComponent(p.tx_ids.join(","))}`)}
+                style={{ background: "#ede9fe", borderLeft: "3px solid #7c3aed", padding: "10px 14px", borderRadius: 6, cursor: "pointer" }}
+                onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.8")}
+                onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}>
                 <div style={{ fontWeight: 600, color: "#4c1d95" }}>
                   📈 Price increase: {p.merchant}
                 </div>
-                <div style={{ color: "#3b0764", marginTop: 2, fontSize: 13 }}>
-                  ${p.old_amount.toFixed(2)} → ${p.new_amount.toFixed(2)} starting {p.first_new_date} (+${p.delta.toFixed(2)}/charge)
+                <div style={{ color: "#3b0764", marginTop: 2, fontSize: 13, display: "flex", justifyContent: "space-between" }}>
+                  <span>${p.old_amount.toFixed(2)} → ${p.new_amount.toFixed(2)} starting {p.first_new_date} (+${p.delta.toFixed(2)}/charge)</span>
+                  <span style={{ fontSize: 11, opacity: 0.7 }}>View transactions →</span>
                 </div>
               </div>
             ))}
@@ -114,6 +126,7 @@ export function Insights() {
               <tr style={{ background: "#f9fafb", textAlign: "left" }}>
                 <th style={{ padding: "10px 16px", fontWeight: 600, color: "#6b7280" }}>Merchant</th>
                 <th style={{ padding: "10px 16px", fontWeight: 600, color: "#6b7280" }}>Category</th>
+                <th style={{ padding: "10px 16px", fontWeight: 600, color: "#6b7280" }}>City</th>
                 <th style={{ padding: "10px 16px", fontWeight: 600, color: "#6b7280", textAlign: "right" }}>Txns</th>
                 <th style={{ padding: "10px 16px", fontWeight: 600, color: "#6b7280", textAlign: "right" }}>Total</th>
                 <th style={{ padding: "10px 16px", width: 120 }}></th>
@@ -138,6 +151,7 @@ export function Insights() {
                         color: "#fff", padding: "2px 8px", borderRadius: 12, fontSize: 11,
                       }}>{m.category}</span>
                     </td>
+                    <td style={{ padding: "9px 16px", color: "#9ca3af", fontSize: 12 }}>{m.city ?? "—"}</td>
                     <td style={{ padding: "9px 16px", textAlign: "right", color: "#9ca3af" }}>{m.tx_count}</td>
                     <td style={{ padding: "9px 16px", textAlign: "right", fontWeight: 600 }}>${m.total.toFixed(2)}</td>
                     <td style={{ padding: "9px 16px" }}>
@@ -162,15 +176,12 @@ export function Insights() {
       {/* ── Day of Week ── */}
       <div style={SECTION}>
         <h2 style={{ margin: "0 0 16px", fontSize: 16 }}>📅 Spending by Day of Week</h2>
-        <ResponsiveContainer width="100%" height={200}>
-          <BarChart data={day_of_week.days} margin={{ top: 4, right: 8, bottom: 4, left: 8 }}>
+        <ResponsiveContainer width="100%" height={220}>
+          <BarChart data={day_of_week.days} margin={{ top: 20, right: 8, bottom: 4, left: 48 }}>
             <XAxis dataKey="day_name" tick={{ fontSize: 12 }} tickFormatter={(v: string) => v.slice(0, 3)} />
-            <YAxis tick={{ fontSize: 11 }} tickFormatter={(v: number) => `$${(v / 1000).toFixed(0)}k`} />
-            <Tooltip
-              formatter={(value: number) => [`$${value.toFixed(2)}`, "Total"]}
-              contentStyle={{ background: "#1a1a2e", border: "none", borderRadius: 8, color: "#fff", fontSize: 12 }}
-            />
-            <Bar dataKey="total" radius={[4, 4, 0, 0]}>
+            <YAxis tick={{ fontSize: 11 }} tickFormatter={(v: number) => `$${(v / 1000).toFixed(1)}k`} width={60} />
+            <Bar dataKey="total" radius={[4, 4, 0, 0]}
+              label={{ position: "top", fontSize: 11, fill: "#6b7280", formatter: (v: number) => `$${(v / 1000).toFixed(1)}k` }}>
               {day_of_week.days.map((d: any) => (
                 <Cell key={d.day} fill={d.day >= 5 ? "#f59e0b" : "#7c6af7"} />
               ))}
@@ -206,10 +217,17 @@ export function Insights() {
             <div style={{ display: "flex", gap: 12, marginBottom: 20 }}>
               {year_over_year.years.map((y: any) => (
                 <div key={y.year} style={{ flex: 1, background: "#f9fafb", borderRadius: 8, padding: "12px 16px", textAlign: "center" }}>
-                  <div style={{ fontSize: 12, color: "#9ca3af", marginBottom: 4 }}>{y.year}</div>
+                  <div style={{ fontSize: 12, color: "#9ca3af", marginBottom: 4 }}>
+                    {y.is_partial ? `${y.year} YTD (${year_over_year.same_period_label})` : `${y.year} full year`}
+                  </div>
                   <div style={{ fontSize: 22, fontWeight: 700 }}>
                     ${y.total.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                   </div>
+                  {y.is_partial && year_over_year.same_period_pct_change !== null && (
+                    <div style={{ fontSize: 12, marginTop: 2, color: year_over_year.same_period_pct_change > 0 ? "#92400e" : "#065f46" }}>
+                      {year_over_year.same_period_pct_change > 0 ? "+" : ""}{year_over_year.same_period_pct_change}% vs same period last year
+                    </div>
+                  )}
                 </div>
               ))}
               {year_over_year.on_pace !== null && (
@@ -218,7 +236,7 @@ export function Insights() {
                   background: (year_over_year.on_pace_pct_change ?? 0) > 0 ? "#fef3c7" : "#d1fae5",
                   borderRadius: 8, padding: "12px 16px", textAlign: "center",
                 }}>
-                  <div style={{ fontSize: 12, color: "#9ca3af", marginBottom: 4 }}>On pace for</div>
+                  <div style={{ fontSize: 12, color: "#9ca3af", marginBottom: 4 }}>On pace for {year_over_year.years.at(-1)?.year}</div>
                   <div style={{ fontSize: 22, fontWeight: 700 }}>
                     ${year_over_year.on_pace.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                   </div>
@@ -227,7 +245,7 @@ export function Insights() {
                       fontSize: 12, marginTop: 2,
                       color: year_over_year.on_pace_pct_change > 0 ? "#92400e" : "#065f46",
                     }}>
-                      {year_over_year.on_pace_pct_change > 0 ? "+" : ""}{year_over_year.on_pace_pct_change}% vs last year
+                      {year_over_year.on_pace_pct_change > 0 ? "+" : ""}{year_over_year.on_pace_pct_change}% vs {year_over_year.years[0]?.year} full year
                     </div>
                   )}
                 </div>

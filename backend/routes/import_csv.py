@@ -5,7 +5,7 @@ from typing import Optional
 from fastapi import APIRouter, BackgroundTasks, HTTPException, UploadFile, File
 from pydantic import BaseModel
 
-from sqlalchemy import select
+from sqlalchemy import select, or_
 from backend.db.database import get_session
 from backend.db.models import Transaction
 from backend.llm.factory import get_llm_provider
@@ -151,9 +151,18 @@ def enrich_existing(background_tasks: BackgroundTasks):
         try:
             llm = get_llm_provider()
             categorizer = Categorizer(llm=llm)
+            _PAYMENT_KEYWORDS = (
+                "automatic payment", "directpay", "direct pay", "online payment",
+                "payment thank you", "payment received", "payment - thank",
+                "thank you - your payment", "epay", "autopay",
+            )
+            payment_filter = or_(*[Transaction.description.ilike(f"%{kw}%") for kw in _PAYMENT_KEYWORDS])
             with get_session() as session:
                 txs = session.execute(
-                    select(Transaction).where(Transaction.merchant_name.is_(None))
+                    select(Transaction)
+                    .where(Transaction.merchant_name.is_(None))
+                    .where(Transaction.amount > 0)
+                    .where(~payment_filter)
                 ).scalars().all()
                 session.expunge_all()
 
@@ -179,6 +188,9 @@ def enrich_existing(background_tasks: BackgroundTasks):
                     session.commit()
                 _enrich_state["done"] += len(batch)
 
+            from backend.analysis.merchant_normalizer import normalize_merchants
+            result = normalize_merchants()
+            _enrich_logger.info("Merchant normalization merged %d variants", result["merged"])
             _enrich_state["status"] = "done"
             _enrich_logger.info("Enrichment complete: %d transactions processed", len(txs))
         except Exception as exc:
@@ -191,3 +203,74 @@ def enrich_existing(background_tasks: BackgroundTasks):
     _enrich_state.update({"status": "pending", "total": 0, "done": 0, "error": None})
     background_tasks.add_task(_run)
     return {"status": "pending", "message": "Enriching transactions in background"}
+
+
+@router.post("/import/recategorize")
+def recategorize_all(background_tasks: BackgroundTasks):
+    """Reset all categories to 'other' and re-run AI enrichment."""
+    from backend.analysis.categorizer import Categorizer
+
+    def _run():
+        if not _enrich_lock.acquire(blocking=False):
+            return
+        _enrich_state.update({"status": "running", "total": 0, "done": 0, "error": None})
+        try:
+            llm = get_llm_provider()
+            categorizer = Categorizer(llm=llm)
+            _PAYMENT_KEYWORDS = (
+                "automatic payment", "directpay", "direct pay", "online payment",
+                "payment thank you", "payment received", "payment - thank",
+                "thank you - your payment", "epay", "autopay",
+            )
+            payment_filter = or_(*[Transaction.description.ilike(f"%{kw}%") for kw in _PAYMENT_KEYWORDS])
+            with get_session() as session:
+                txs = session.execute(
+                    select(Transaction)
+                    .where(Transaction.amount > 0)
+                    .where(~payment_filter)
+                ).scalars().all()
+                session.expunge_all()
+
+            _enrich_state["total"] = len(txs)
+            if not txs:
+                _enrich_state["status"] = "done"
+                return
+
+            from backend.analysis.categorizer import BATCH_SIZE
+            for i in range(0, len(txs), BATCH_SIZE):
+                batch = txs[i:i + BATCH_SIZE]
+                enrichments = categorizer._enrich_batch(batch)
+                with get_session() as session:
+                    for tx_id, enrich in enrichments.items():
+                        tx = session.get(Transaction, tx_id)
+                        if tx:
+                            tx.category = enrich.category  # always override
+                            if not tx.merchant_name:
+                                tx.merchant_name = enrich.merchant_name
+                                tx.city = enrich.city
+                                tx.is_online = enrich.is_online
+                                tx.merchant_type = enrich.merchant_type
+                    session.commit()
+                _enrich_state["done"] += len(batch)
+
+            from backend.analysis.merchant_normalizer import normalize_merchants
+            normalize_merchants()
+            _enrich_state["status"] = "done"
+        except Exception as exc:
+            _enrich_logger.exception("Recategorize background task failed")
+            _enrich_state["status"] = "error"
+            _enrich_state["error"] = str(exc)
+        finally:
+            _enrich_lock.release()
+
+    _enrich_state.update({"status": "pending", "total": 0, "done": 0, "error": None})
+    background_tasks.add_task(_run)
+    return {"status": "pending", "message": "Recategorizing transactions in background"}
+
+
+@router.post("/import/normalize-merchants")
+def normalize_merchant_names():
+    """Fuzzy-dedup merchant names across all transactions."""
+    from backend.analysis.merchant_normalizer import normalize_merchants
+    result = normalize_merchants()
+    return result

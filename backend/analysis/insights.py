@@ -30,7 +30,7 @@ def get_spending_anomalies(txs: List[Transaction]) -> List[dict]:
     for tx in txs:
         month_key = tx.date.strftime("%Y-%m")
         cat = tx.category or "other"
-        by_cat_month[cat][month_key].append(tx.amount)
+        by_cat_month[cat][month_key].append(tx)
 
     anomalies = []
     for cat, months_data in by_cat_month.items():
@@ -39,13 +39,13 @@ def get_spending_anomalies(txs: List[Transaction]) -> List[dict]:
         current_txs = months_data[current_month]
         if len(current_txs) < 3:
             continue
-        current_amount = sum(current_txs)
+        current_amount = sum(t.amount for t in current_txs)
 
         prior_months = sorted(m for m in months_data if m != current_month)
         if len(prior_months) < 3:
             continue
         recent_prior = prior_months[-3:]
-        prior_totals = [sum(months_data[m]) for m in recent_prior]
+        prior_totals = [sum(t.amount for t in months_data[m]) for m in recent_prior]
         avg = sum(prior_totals) / len(prior_totals)
 
         if avg > 0 and current_amount / avg >= 2.0:
@@ -55,6 +55,7 @@ def get_spending_anomalies(txs: List[Transaction]) -> List[dict]:
                 "avg_amount": round(avg, 2),
                 "ratio": round(current_amount / avg, 2),
                 "tx_count": len(current_txs),
+                "tx_ids": [t.id for t in current_txs],
             })
 
     return sorted(anomalies, key=lambda x: -x["ratio"])
@@ -94,6 +95,7 @@ def get_duplicate_charges(txs: List[Transaction]) -> List[dict]:
                             "amount": round(tx1.amount, 2),
                             "dates": [tx1.date.isoformat(), tx2.date.isoformat()],
                             "sources": list({tx1.source, tx2.source}),
+                            "tx_ids": [tx1.id, tx2.id],
                         })
     return duplicates
 
@@ -140,6 +142,7 @@ def get_price_increases(txs: List[Transaction]) -> List[dict]:
                 "new_amount": round(last_amount, 2),
                 "delta": round(last_amount - prior_median, 2),
                 "first_new_date": recent[-1].date.isoformat(),
+                "tx_ids": [t.id for t in recent],
             })
 
     return increases
@@ -164,12 +167,18 @@ def get_merchant_breakdown(txs: List[Transaction]) -> List[dict]:
             if t.merchant_type:
                 type_counts[t.merchant_type] += 1
         top_type = max(type_counts, key=lambda k: type_counts[k]) if type_counts else None
+        city_counts: dict = defaultdict(int)
+        for t in merchant_txs:
+            if t.city:
+                city_counts[t.city] += 1
+        top_city = max(city_counts, key=lambda k: city_counts[k]) if city_counts else None
         merchants.append({
             "name": name,
             "total": round(total, 2),
             "tx_count": len(merchant_txs),
             "category": top_cat,
             "merchant_type": top_type,
+            "city": top_city,
             "last_date": last_date.isoformat(),
         })
 
@@ -207,39 +216,58 @@ def get_day_of_week(txs: List[Transaction]) -> dict:
 
 def get_year_over_year(txs: List[Transaction]) -> dict:
     today = date.today()
+    current_year = today.year
+    current_month = today.month
+    current_day = today.day
+
     by_year_cat: dict = defaultdict(lambda: defaultdict(float))
+    by_year_cat_ytd: dict = defaultdict(lambda: defaultdict(float))
 
     for tx in txs:
-        by_year_cat[tx.date.year][tx.category or "other"] += tx.amount
+        y = tx.date.year
+        by_year_cat[y][tx.category or "other"] += tx.amount
+        if (tx.date.month, tx.date.day) <= (current_month, current_day):
+            by_year_cat_ytd[y][tx.category or "other"] += tx.amount
 
     years_present = sorted(by_year_cat.keys())
     if len(years_present) < 2:
-        return {"insufficient_data": True, "years": [], "on_pace": None, "on_pace_pct_change": None}
+        return {"insufficient_data": True, "years": [], "on_pace": None, "on_pace_pct_change": None,
+                "same_period_pct_change": None, "same_period_label": ""}
 
-    years_to_show = years_present[-2:]
+    prior_year, curr_year = years_present[-2], years_present[-1]
+
     years_data = []
-    for y in years_to_show:
-        cats = dict(by_year_cat[y])
-        total = sum(cats.values())
+    for y in [prior_year, curr_year]:
+        is_current = (y == current_year)
+        cats_full = dict(by_year_cat[y])
+        cats_ytd = dict(by_year_cat_ytd[y])
+        # Bar chart uses same-window slice for both years so bars are apples-to-apples
         years_data.append({
             "year": y,
-            "total": round(total, 2),
-            "categories": {k: round(v, 2) for k, v in cats.items()},
+            "total": round(sum(cats_full.values()), 2),
+            "is_partial": is_current,
+            "categories": {k: round(v, 2) for k, v in cats_ytd.items()},
         })
 
     on_pace = None
     on_pace_pct_change = None
-    if years_to_show[-1] == today.year:
+    if curr_year == current_year:
         day_of_year = today.timetuple().tm_yday
-        ytd = sum(by_year_cat[today.year].values())
+        ytd = sum(by_year_cat[current_year].values())
         on_pace = round(ytd / day_of_year * 365, 2)
-        prior_total = sum(by_year_cat[years_to_show[0]].values())
+        prior_total = sum(by_year_cat[prior_year].values())
         if prior_total > 0:
             on_pace_pct_change = round((on_pace - prior_total) / prior_total * 100, 1)
+
+    prior_ytd = sum(by_year_cat_ytd[prior_year].values())
+    curr_ytd = sum(by_year_cat_ytd[curr_year].values())
+    same_period_pct_change = round((curr_ytd - prior_ytd) / prior_ytd * 100, 1) if prior_ytd > 0 else None
 
     return {
         "insufficient_data": False,
         "years": years_data,
         "on_pace": on_pace,
         "on_pace_pct_change": on_pace_pct_change,
+        "same_period_pct_change": same_period_pct_change,
+        "same_period_label": f"Jan–{today.strftime('%b %d')}",
     }

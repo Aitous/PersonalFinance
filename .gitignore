@@ -4,10 +4,24 @@ __pycache__/
 .venv/
 *.egg-info/
 
-# Database
-finance.db
+# Database — contains personal transaction data
+*.db
 *.db-shm
 *.db-wal
+
+# Transaction CSVs — contain personal financial data
+transactions/
+processed/
+
+# macOS
+.DS_Store
+
+# Playwright / test artifacts
+.playwright-mcp/
+
+# Build artifacts
+vite
+frontend@0.0.0
 
 # Superpowers
 .superpowers/
