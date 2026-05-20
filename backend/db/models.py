@@ -42,3 +42,11 @@ class Sync(Base):
     from_date = Column(Date, nullable=False)
     to_date = Column(Date, nullable=False)
     tx_count = Column(Integer, nullable=False)
+
+class MonthlyReportCache(Base):
+    __tablename__ = "monthly_report_cache"
+
+    year = Column(Integer, primary_key=True)
+    month = Column(Integer, primary_key=True)
+    narrative = Column(Text, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))

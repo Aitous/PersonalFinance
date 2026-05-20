@@ -52,3 +52,10 @@ def test_create_sync(db):
     db.add(sync)
     db.commit()
     assert sync.id is not None
+
+def test_monthly_report_cache_table_exists():
+    from backend.db.database import engine, init_db
+    from sqlalchemy import inspect
+    init_db()
+    inspector = inspect(engine)
+    assert "monthly_report_cache" in inspector.get_table_names()
