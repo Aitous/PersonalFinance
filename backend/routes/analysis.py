@@ -152,6 +152,9 @@ def get_monthly_report(year: int, month: int):
 
 @router.post("/analysis/monthly-report/narrative")
 def generate_monthly_narrative(year: int, month: int):
+    if not (1 <= month <= 12):
+        from fastapi import HTTPException
+        raise HTTPException(status_code=422, detail="month must be 1–12")
     import calendar
     month_end = date(year, month, calendar.monthrange(year, month)[1])
 
