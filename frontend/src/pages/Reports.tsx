@@ -8,6 +8,19 @@ import {
   MonthlyReport,
 } from "../api/reports";
 
+interface StatCard {
+  label: string;
+  value: string;
+  valueColor?: string;
+  sub?: string;
+}
+
+interface CategoryRow {
+  name: string;
+  current: number;
+  prior: number;
+}
+
 function lastCompleteMonth(): { year: number; month: number } {
   const today = new Date();
   const month = today.getMonth(); // 0-indexed, so this is "previous month" in 1-indexed
@@ -64,6 +77,8 @@ export default function Reports() {
     try {
       const narrative = await generateNarrative(year, month);
       setReport({ ...report, narrative });
+    } catch {
+      setError("Failed to generate summary.");
     } finally {
       setNarrativeLoading(false);
     }
@@ -128,7 +143,7 @@ export default function Reports() {
 
           {/* 2. Stats row */}
           <div style={{ display: "flex", gap: 16, marginBottom: 20 }}>
-            {[
+            {([
               { label: "Total spent", value: fmt(report.total) },
               {
                 label: "vs last month",
@@ -139,11 +154,11 @@ export default function Reports() {
                   : undefined,
               },
               { label: "Transactions", value: String(report.tx_count) },
-            ].map((s) => (
+            ] as StatCard[]).map((s) => (
               <div key={s.label} style={{ ...card, flex: 1, marginBottom: 0, textAlign: "center" }}>
                 <div style={label}>{s.label}</div>
-                <div style={{ fontSize: 26, fontWeight: 700, color: (s as any).valueColor ?? "#fff" }}>{s.value}</div>
-                {(s as any).sub && <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 2 }}>{(s as any).sub}</div>}
+                <div style={{ fontSize: 26, fontWeight: 700, color: s.valueColor ?? "#fff" }}>{s.value}</div>
+                {s.sub && <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 2 }}>{s.sub}</div>}
               </div>
             ))}
           </div>
@@ -159,7 +174,7 @@ export default function Reports() {
                   margin={{ left: 80, right: 30, top: 4, bottom: 4 }}
                   onClick={(data) => {
                     if (!data?.activePayload) return;
-                    const cat = (data.activePayload[0]?.payload as any)?.name;
+                    const cat = (data.activePayload[0]?.payload as CategoryRow)?.name;
                     if (!cat) return;
                     const pad = (n: number) => String(n).padStart(2, "0");
                     const from = `${year}-${pad(month)}-01`;
@@ -222,14 +237,14 @@ export default function Reports() {
           {report.subscriptions_due.length > 0 && (
             <div style={card}>
               <div style={sectionTitle}>Subscriptions Renewing Soon</div>
-              {report.subscriptions_due.map((s) => (
+              {report.subscriptions_due.map((s, i) => (
                 <div
                   key={s.description + s.next_date}
                   onClick={() => navigate("/subscriptions")}
                   style={{
                     display: "flex", justifyContent: "space-between", alignItems: "center",
                     padding: "10px 0",
-                    borderBottom: "1px solid #312e81",
+                    borderBottom: i < report.subscriptions_due.length - 1 ? "1px solid #312e81" : "none",
                     cursor: "pointer",
                   }}
                   onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.75")}
