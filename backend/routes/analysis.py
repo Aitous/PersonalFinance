@@ -114,3 +114,101 @@ def get_savings_tips(body: SavingsTipsRequest = SavingsTipsRequest()):
     advisor = SavingsAdvisor(llm=llm)
     tips = advisor.get_tips(summary, period=period, subscriptions=subscriptions)
     return {"tips": tips, "period": period}
+
+
+@router.get("/analysis/monthly-report")
+def get_monthly_report(year: int, month: int):
+    if not (1 <= month <= 12):
+        from fastapi import HTTPException
+        raise HTTPException(status_code=422, detail="month must be 1–12")
+
+    import calendar
+    month_end = date(year, month, calendar.monthrange(year, month)[1])
+
+    with get_session() as session:
+        from backend.db.models import MonthlyReportCache, Subscription
+        from backend.analysis.monthly_report import get_monthly_report_data, get_subscriptions_due
+
+        all_txs = session.execute(select(Transaction)).scalars().all()
+        spending_txs = [tx for tx in all_txs if not _is_payment(tx) and tx.amount > 0]
+
+        subs = session.execute(
+            select(Subscription).where(Subscription.active == True)
+        ).scalars().all()
+
+        cached = session.execute(
+            select(MonthlyReportCache).where(
+                MonthlyReportCache.year == year,
+                MonthlyReportCache.month == month,
+            )
+        ).scalar_one_or_none()
+
+        report = get_monthly_report_data(spending_txs, year=year, month=month)
+        report["subscriptions_due"] = get_subscriptions_due(subs, report_month_end=month_end)
+        report["narrative"] = cached.narrative if cached else None
+
+    return report
+
+
+@router.post("/analysis/monthly-report/narrative")
+def generate_monthly_narrative(year: int, month: int):
+    import calendar
+    month_end = date(year, month, calendar.monthrange(year, month)[1])
+
+    with get_session() as session:
+        from backend.db.models import MonthlyReportCache, Subscription
+        from backend.analysis.monthly_report import get_monthly_report_data, get_subscriptions_due
+        from datetime import datetime, timezone
+
+        # Check cache first
+        cached = session.execute(
+            select(MonthlyReportCache).where(
+                MonthlyReportCache.year == year,
+                MonthlyReportCache.month == month,
+            )
+        ).scalar_one_or_none()
+        if cached:
+            return {"narrative": cached.narrative}
+
+        all_txs = session.execute(select(Transaction)).scalars().all()
+        spending_txs = [tx for tx in all_txs if not _is_payment(tx) and tx.amount > 0]
+        subs = session.execute(
+            select(Subscription).where(Subscription.active == True)
+        ).scalars().all()
+
+        report = get_monthly_report_data(spending_txs, year=year, month=month)
+        due = get_subscriptions_due(subs, report_month_end=month_end)
+
+        import calendar as _cal
+        month_name = _cal.month_name[month]
+        top3 = report["categories"][:3]
+        cat_lines = "\n".join(
+            f"- {c['name']}: ${c['current']:.0f} (prior month: ${c['prior']:.0f})"
+            for c in top3
+        )
+        pct_change = ""
+        if report["prev_total"] > 0:
+            delta = (report["total"] - report["prev_total"]) / report["prev_total"] * 100
+            pct_change = f", {abs(delta):.1f}% {'more' if delta > 0 else 'less'} than last month"
+        due_text = f"{len(due)} subscription(s) renew in the next 30 days." if due else "No subscriptions renewing soon."
+
+        prompt = (
+            f"Write a 2-4 sentence plain English summary of someone's spending in {month_name} {year}. "
+            f"They spent ${report['total']:.0f} total{pct_change}. "
+            f"Top categories:\n{cat_lines}\n"
+            f"{due_text} "
+            f"Be specific about amounts. No preamble, no sign-off."
+        )
+
+        llm = get_llm_provider(use_pro=True)
+        narrative = llm.complete(prompt).strip()
+
+        entry = MonthlyReportCache(
+            year=year,
+            month=month,
+            narrative=narrative,
+            created_at=datetime.now(timezone.utc),
+        )
+        session.add(entry)
+
+    return {"narrative": narrative}
