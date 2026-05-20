@@ -30,6 +30,7 @@ def get_monthly_report_data(txs: List[Transaction], year: int, month: int) -> di
     for t in prior_txs:
         prior_by_cat[t.category or "other"] += t.amount
 
+    all_cats = set(current_by_cat) | set(prior_by_cat)
     categories = sorted(
         [
             {
@@ -37,7 +38,7 @@ def get_monthly_report_data(txs: List[Transaction], year: int, month: int) -> di
                 "current": round(current_by_cat[cat], 2),
                 "prior": round(prior_by_cat[cat], 2),
             }
-            for cat in current_by_cat
+            for cat in all_cats
         ],
         key=lambda x: -x["current"],
     )
