@@ -1,8 +1,8 @@
 import pytest
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
-from backend.db.models import Base, Transaction, Subscription, Sync
+from backend.db.models import Base, Transaction, Subscription, Sync, MonthlyReportCache
 
 @pytest.fixture
 def db():
@@ -53,9 +53,12 @@ def test_create_sync(db):
     db.commit()
     assert sync.id is not None
 
-def test_monthly_report_cache_table_exists():
-    from backend.db.database import engine, init_db
-    from sqlalchemy import inspect
-    init_db()
-    inspector = inspect(engine)
-    assert "monthly_report_cache" in inspector.get_table_names()
+def test_create_monthly_report_cache(db):
+    entry = MonthlyReportCache(year=2026, month=4, narrative="You spent a lot.", created_at=datetime.now(timezone.utc))
+    db.add(entry)
+    db.commit()
+    result = db.query(MonthlyReportCache).filter_by(year=2026, month=4).first()
+    assert result is not None
+    assert result.narrative == "You spent a lot."
+    assert result.year == 2026
+    assert result.month == 4

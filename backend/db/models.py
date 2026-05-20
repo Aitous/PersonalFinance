@@ -43,6 +43,7 @@ class Sync(Base):
     to_date = Column(Date, nullable=False)
     tx_count = Column(Integer, nullable=False)
 
+
 class MonthlyReportCache(Base):
     __tablename__ = "monthly_report_cache"
 
