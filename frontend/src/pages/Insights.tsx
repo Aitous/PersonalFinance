@@ -26,6 +26,7 @@ export function Insights() {
   const [avgDateTo, setAvgDateTo] = useState("");
   const [avgData, setAvgData] = useState<any>(null);
   const [avgLoading, setAvgLoading] = useState(false);
+  const [avgError, setAvgError] = useState<string | null>(null);
 
   useEffect(() => {
     setLoading(true);
@@ -37,12 +38,14 @@ export function Insights() {
 
   useEffect(() => {
     setAvgLoading(true);
+    setAvgError(null);
     const params = avgDateFrom && avgDateTo
       ? `date_from=${avgDateFrom}&date_to=${avgDateTo}`
       : `months=${avgMonths}`;
     fetch(`http://localhost:8000/analysis/monthly-averages?${params}`)
       .then((r) => r.json())
       .then(setAvgData)
+      .catch(() => setAvgError("Failed to load averages."))
       .finally(() => setAvgLoading(false));
   }, [avgMonths, avgDateFrom, avgDateTo]);
 
@@ -320,6 +323,8 @@ export function Insights() {
           />
         </div>
 
+        {avgError && <div style={{ color: "#f87171", padding: 20 }}>{avgError}</div>}
+
         {avgLoading && <div style={{ color: "#9ca3af", padding: 20 }}>Loading...</div>}
 
         {avgData && !avgLoading && (
@@ -356,7 +361,7 @@ export function Insights() {
                           const params = new URLSearchParams({ category: cat.category });
                           if (avgDateFrom) params.set("dateFrom", avgDateFrom);
                           if (avgDateTo) params.set("dateTo", avgDateTo);
-                          window.location.href = `/transactions?${params.toString()}`;
+                          navigate(`/transactions?${params.toString()}`);
                         }}
                         style={{
                           borderTop: "1px solid #312e81", cursor: "pointer",
