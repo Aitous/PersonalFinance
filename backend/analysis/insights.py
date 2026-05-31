@@ -304,6 +304,7 @@ def get_monthly_averages(txs: List[Transaction], date_from: date, date_to: date)
     total_spend = sum(cat_totals.values())
     total_avg = round(total_spend / n, 2)
 
+    # avg divides by n (all complete months), so months with zero spend count as $0 avg
     categories = sorted(
         [
             {

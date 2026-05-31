@@ -32,13 +32,18 @@ def test_averages_over_complete_months():
 def test_current_partial_month_excluded():
     from backend.analysis.insights import get_monthly_averages
     from datetime import date as _date
+    from dateutil.relativedelta import relativedelta
+
     today = _date.today()
+    two_months_ago = (today.replace(day=1) - relativedelta(months=2)).replace(day=15)
+    one_month_ago = (today.replace(day=1) - relativedelta(months=1)).replace(day=15)
+
     txs = [
-        _tx(100.0, "dining", today.year, today.month - 2 if today.month > 2 else 1, 15),
-        _tx(100.0, "dining", today.year, today.month - 1 if today.month > 1 else 2, 15),
+        _tx(100.0, "dining", two_months_ago.year, two_months_ago.month, two_months_ago.day),
+        _tx(100.0, "dining", one_month_ago.year, one_month_ago.month, one_month_ago.day),
         _tx(999.0, "dining", today.year, today.month, 1),  # current month — should be excluded
     ]
-    date_from = date(today.year, today.month - 2 if today.month > 2 else 1, 1)
+    date_from = (today.replace(day=1) - relativedelta(months=2))
     result = get_monthly_averages(txs, date_from=date_from, date_to=today)
     assert result["total_avg"] == 100.0
 
