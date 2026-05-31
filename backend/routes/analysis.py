@@ -215,3 +215,38 @@ def generate_monthly_narrative(year: int, month: int):
         session.add(entry)
 
     return {"narrative": narrative}
+
+
+@router.get("/analysis/monthly-averages")
+def get_monthly_averages_endpoint(
+    months: int = 3,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+):
+    from backend.analysis.insights import get_monthly_averages
+    from fastapi import HTTPException
+
+    today = date.today()
+
+    if date_from and date_to:
+        try:
+            from_date = date.fromisoformat(date_from)
+            to_date = date.fromisoformat(date_to)
+        except ValueError:
+            raise HTTPException(status_code=422, detail="Invalid date format. Use YYYY-MM-DD.")
+    else:
+        months = max(1, min(months, 60))
+        year = today.year
+        month = today.month - months
+        while month <= 0:
+            month += 12
+            year -= 1
+        from_date = date(year, month, 1)
+        to_date = today
+
+    with get_session() as session:
+        all_txs = session.execute(select(Transaction)).scalars().all()
+        spending_txs = [tx for tx in all_txs if not _is_payment(tx) and tx.amount > 0]
+        session.expunge_all()
+
+    return get_monthly_averages(spending_txs, date_from=from_date, date_to=to_date)
