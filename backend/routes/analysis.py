@@ -234,6 +234,8 @@ def get_monthly_averages_endpoint(
             to_date = date.fromisoformat(date_to)
         except ValueError:
             raise HTTPException(status_code=422, detail="Invalid date format. Use YYYY-MM-DD.")
+        if from_date > to_date:
+            raise HTTPException(status_code=422, detail="date_from must be before date_to.")
     else:
         months = max(1, min(months, 60))
         year = today.year
