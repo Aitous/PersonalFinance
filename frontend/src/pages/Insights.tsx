@@ -288,7 +288,7 @@ export function Insights() {
       })()}
       {/* Monthly Averages */}
       <div style={{ marginTop: 32 }}>
-        <div style={{ fontSize: 18, fontWeight: 700, color: "#fff", marginBottom: 16 }}>
+        <div style={{ fontSize: 18, fontWeight: 700, color: "#111827", marginBottom: 16 }}>
           Average Monthly Spending
         </div>
 
@@ -299,43 +299,43 @@ export function Insights() {
               key={m}
               onClick={() => { setAvgMonths(m); setAvgDateFrom(""); setAvgDateTo(""); }}
               style={{
-                padding: "6px 16px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 13,
-                background: avgMonths === m && !avgDateFrom ? "#7c6af7" : "#312e81",
-                color: avgMonths === m && !avgDateFrom ? "#fff" : "#a5b4fc",
+                padding: "6px 16px", borderRadius: 8, border: "1px solid #e5e7eb", cursor: "pointer", fontSize: 13,
+                background: avgMonths === m && !avgDateFrom ? "#7c6af7" : "#f3f4f6",
+                color: avgMonths === m && !avgDateFrom ? "#fff" : "#374151",
               }}
             >
               {m}M
             </button>
           ))}
-          <span style={{ color: "#6b7280", fontSize: 13 }}>or</span>
+          <span style={{ color: "#9ca3af", fontSize: 13 }}>or</span>
           <input
             type="date"
             value={avgDateFrom}
             onChange={(e) => setAvgDateFrom(e.target.value)}
-            style={{ background: "#312e81", border: "none", borderRadius: 8, padding: "6px 10px", color: "#e0e7ff", fontSize: 13 }}
+            style={{ background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: 8, padding: "6px 10px", color: "#374151", fontSize: 13 }}
           />
-          <span style={{ color: "#6b7280", fontSize: 13 }}>–</span>
+          <span style={{ color: "#9ca3af", fontSize: 13 }}>–</span>
           <input
             type="date"
             value={avgDateTo}
             onChange={(e) => setAvgDateTo(e.target.value)}
-            style={{ background: "#312e81", border: "none", borderRadius: 8, padding: "6px 10px", color: "#e0e7ff", fontSize: 13 }}
+            style={{ background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: 8, padding: "6px 10px", color: "#374151", fontSize: 13 }}
           />
         </div>
 
-        {avgError && <div style={{ color: "#f87171", padding: 20 }}>{avgError}</div>}
+        {avgError && <div style={{ color: "#dc2626", padding: "10px 0" }}>{avgError}</div>}
 
-        {avgLoading && <div style={{ color: "#9ca3af", padding: 20 }}>Loading...</div>}
+        {avgLoading && <div style={{ color: "#6b7280", padding: "10px 0" }}>Loading...</div>}
 
         {avgData && !avgLoading && (
           <>
             {/* Total average card */}
-            <div style={{ background: "#1e1b4b", borderRadius: 12, padding: "20px 24px", marginBottom: 16 }}>
-              <div style={{ fontSize: 12, color: "#9ca3af", marginBottom: 4 }}>Monthly average</div>
-              <div style={{ fontSize: 32, fontWeight: 700, color: "#fff" }}>
+            <div style={{ background: "#fff", borderRadius: 10, padding: "20px 24px", marginBottom: 16, border: "1px solid #e5e7eb" }}>
+              <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 4 }}>Monthly average</div>
+              <div style={{ fontSize: 32, fontWeight: 700, color: "#111827" }}>
                 ${avgData.total_avg.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
               </div>
-              <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 4 }}>
+              <div style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>
                 avg over {avgData.months_count} complete month{avgData.months_count !== 1 ? "s" : ""}
                 {avgData.months_count === 0 ? " — no complete months in range" : ` (${avgData.date_from} – ${avgData.date_to})`}
               </div>
@@ -343,18 +343,18 @@ export function Insights() {
 
             {/* Per-category table */}
             {avgData.categories.length > 0 && (
-              <div style={{ background: "#1e1b4b", borderRadius: 12, padding: "20px 24px" }}>
+              <div style={{ background: "#fff", borderRadius: 10, padding: "20px 24px", border: "1px solid #e5e7eb" }}>
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
                   <thead>
-                    <tr style={{ color: "#9ca3af", fontSize: 12, textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                      <th style={{ textAlign: "left", paddingBottom: 10, fontWeight: 600 }}>Category</th>
-                      <th style={{ textAlign: "right", paddingBottom: 10, fontWeight: 600 }}>Avg / month</th>
-                      <th style={{ textAlign: "right", paddingBottom: 10, fontWeight: 600 }}>% of total</th>
-                      <th style={{ textAlign: "right", paddingBottom: 10, fontWeight: 600 }}>Months with spend</th>
+                    <tr style={{ background: "#f9fafb", textAlign: "left" }}>
+                      <th style={{ textAlign: "left", padding: "8px 0", fontWeight: 600, fontSize: 12, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.05em" }}>Category</th>
+                      <th style={{ textAlign: "right", padding: "8px 0", fontWeight: 600, fontSize: 12, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.05em" }}>Avg / month</th>
+                      <th style={{ textAlign: "right", padding: "8px 0", fontWeight: 600, fontSize: 12, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.05em" }}>% of total</th>
+                      <th style={{ textAlign: "right", padding: "8px 0", fontWeight: 600, fontSize: 12, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.05em" }}>Months with spend</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {avgData.categories.map((cat: any, i: number) => (
+                    {avgData.categories.map((cat: any) => (
                       <tr
                         key={cat.category}
                         onClick={() => {
@@ -363,18 +363,16 @@ export function Insights() {
                           if (avgDateTo) params.set("dateTo", avgDateTo);
                           navigate(`/transactions?${params.toString()}`);
                         }}
-                        style={{
-                          borderTop: "1px solid #312e81", cursor: "pointer",
-                        }}
-                        onMouseEnter={(e) => (e.currentTarget.style.background = "#312e81")}
-                        onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                        style={{ borderTop: "1px solid #e5e7eb", cursor: "pointer" }}
+                        onMouseEnter={(e) => (e.currentTarget.style.background = "#f9fafb")}
+                        onMouseLeave={(e) => (e.currentTarget.style.background = "")}
                       >
-                        <td style={{ padding: "10px 0", color: "#e0e7ff", textTransform: "capitalize" }}>{cat.category}</td>
-                        <td style={{ padding: "10px 0", textAlign: "right", color: "#c4b5fd", fontWeight: 600 }}>
+                        <td style={{ padding: "10px 0", color: "#111827", textTransform: "capitalize" }}>{cat.category}</td>
+                        <td style={{ padding: "10px 0", textAlign: "right", color: "#7c3aed", fontWeight: 600 }}>
                           ${cat.avg.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                         </td>
-                        <td style={{ padding: "10px 0", textAlign: "right", color: "#9ca3af" }}>{cat.pct}%</td>
-                        <td style={{ padding: "10px 0", textAlign: "right", color: "#9ca3af" }}>
+                        <td style={{ padding: "10px 0", textAlign: "right", color: "#6b7280" }}>{cat.pct}%</td>
+                        <td style={{ padding: "10px 0", textAlign: "right", color: "#6b7280" }}>
                           {cat.months_with_spend} / {avgData.months_count}
                         </td>
                       </tr>
