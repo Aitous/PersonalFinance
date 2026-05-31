@@ -234,19 +234,22 @@ def get_year_over_year(txs: List[Transaction]) -> dict:
         return {"insufficient_data": True, "years": [], "on_pace": None, "on_pace_pct_change": None,
                 "same_period_pct_change": None, "same_period_label": ""}
 
-    prior_year, curr_year = years_present[-2], years_present[-1]
+    # Up to 3 years: last 2 complete + current
+    years_to_show = years_present[-3:]
+    curr_year = years_to_show[-1]
+    prior_year = years_to_show[-2]
 
     years_data = []
-    for y in [prior_year, curr_year]:
+    for y in years_to_show:
         is_current = (y == current_year)
         cats_full = dict(by_year_cat[y])
         cats_ytd = dict(by_year_cat_ytd[y])
-        # Bar chart uses same-window slice for both years so bars are apples-to-apples
+        # Current year: show YTD only. Past years: show full year total but use YTD slice for bar chart
         years_data.append({
             "year": y,
-            "total": round(sum(cats_full.values()), 2),
+            "total": round(sum(cats_ytd.values()), 2) if is_current else round(sum(cats_full.values()), 2),
             "is_partial": is_current,
-            "categories": {k: round(v, 2) for k, v in cats_ytd.items()},
+            "categories": {k: round(v, 2) for k, v in (cats_ytd if is_current else cats_full).items()},
         })
 
     on_pace = None
@@ -270,4 +273,54 @@ def get_year_over_year(txs: List[Transaction]) -> dict:
         "on_pace_pct_change": on_pace_pct_change,
         "same_period_pct_change": same_period_pct_change,
         "same_period_label": f"Jan–{today.strftime('%b %d')}",
+    }
+
+
+def get_monthly_averages(txs: List[Transaction], date_from: date, date_to: date) -> dict:
+    today = date.today()
+    current_month_key = today.strftime("%Y-%m")
+
+    by_month: dict = defaultdict(lambda: defaultdict(float))
+    for tx in txs:
+        if tx.date < date_from or tx.date > date_to:
+            continue
+        month_key = tx.date.strftime("%Y-%m")
+        if month_key == current_month_key:
+            continue
+        by_month[month_key][tx.category or "other"] += tx.amount
+
+    complete_months = sorted(by_month.keys())
+    n = len(complete_months)
+    if n == 0:
+        return {"months_count": 0, "total_avg": 0.0, "categories": [], "date_from": date_from.isoformat(), "date_to": date_to.isoformat()}
+
+    cat_totals: dict = defaultdict(float)
+    cat_month_counts: dict = defaultdict(int)
+    for month_key in complete_months:
+        for cat, amount in by_month[month_key].items():
+            cat_totals[cat] += amount
+            cat_month_counts[cat] += 1
+
+    total_spend = sum(cat_totals.values())
+    total_avg = round(total_spend / n, 2)
+
+    categories = sorted(
+        [
+            {
+                "category": cat,
+                "avg": round(cat_totals[cat] / n, 2),
+                "pct": round(cat_totals[cat] / total_spend * 100, 1) if total_spend > 0 else 0.0,
+                "months_with_spend": cat_month_counts[cat],
+            }
+            for cat in cat_totals
+        ],
+        key=lambda x: -x["avg"],
+    )
+
+    return {
+        "months_count": n,
+        "total_avg": total_avg,
+        "categories": categories,
+        "date_from": date_from.isoformat(),
+        "date_to": date_to.isoformat(),
     }
