@@ -21,6 +21,11 @@ export function Insights() {
   const [error, setError] = useState<string | null>(null);
   const [merchantDays, setMerchantDays] = useState(90);
   const [merchantSearch, setMerchantSearch] = useState("");
+  const [avgMonths, setAvgMonths] = useState<3 | 6 | 12>(3);
+  const [avgDateFrom, setAvgDateFrom] = useState("");
+  const [avgDateTo, setAvgDateTo] = useState("");
+  const [avgData, setAvgData] = useState<any>(null);
+  const [avgLoading, setAvgLoading] = useState(false);
 
   useEffect(() => {
     setLoading(true);
@@ -29,6 +34,17 @@ export function Insights() {
       .catch((e: any) => setError(e.message))
       .finally(() => setLoading(false));
   }, [merchantDays]);
+
+  useEffect(() => {
+    setAvgLoading(true);
+    const params = avgDateFrom && avgDateTo
+      ? `date_from=${avgDateFrom}&date_to=${avgDateTo}`
+      : `months=${avgMonths}`;
+    fetch(`http://localhost:8000/analysis/monthly-averages?${params}`)
+      .then((r) => r.json())
+      .then(setAvgData)
+      .finally(() => setAvgLoading(false));
+  }, [avgMonths, avgDateFrom, avgDateTo]);
 
   if (loading) return <p>Loading insights…</p>;
   if (error) return <p style={{ color: "red" }}>Failed to load insights: {error}</p>;
@@ -209,7 +225,7 @@ export function Insights() {
           return (b[lastYear] ?? 0) - (a[lastYear] ?? 0);
         }).slice(0, 8);
         const yearKeys = year_over_year.years.map((y: any) => String(y.year));
-        const YEAR_COLORS = ["#c4b5fd", "#7c6af7"];
+        const YEAR_COLORS = ["#a5b4fc", "#c4b5fd", "#7c6af7"];
 
         return (
           <div style={SECTION}>
@@ -245,7 +261,7 @@ export function Insights() {
                       fontSize: 12, marginTop: 2,
                       color: year_over_year.on_pace_pct_change > 0 ? "#92400e" : "#065f46",
                     }}>
-                      {year_over_year.on_pace_pct_change > 0 ? "+" : ""}{year_over_year.on_pace_pct_change}% vs {year_over_year.years[0]?.year} full year
+                      {year_over_year.on_pace_pct_change > 0 ? "+" : ""}{year_over_year.on_pace_pct_change}% vs {year_over_year.years.at(-2)?.year} full year
                     </div>
                   )}
                 </div>
@@ -267,6 +283,104 @@ export function Insights() {
           </div>
         );
       })()}
+      {/* Monthly Averages */}
+      <div style={{ marginTop: 32 }}>
+        <div style={{ fontSize: 18, fontWeight: 700, color: "#fff", marginBottom: 16 }}>
+          Average Monthly Spending
+        </div>
+
+        {/* Controls */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20, flexWrap: "wrap" }}>
+          {([3, 6, 12] as const).map((m) => (
+            <button
+              key={m}
+              onClick={() => { setAvgMonths(m); setAvgDateFrom(""); setAvgDateTo(""); }}
+              style={{
+                padding: "6px 16px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 13,
+                background: avgMonths === m && !avgDateFrom ? "#7c6af7" : "#312e81",
+                color: avgMonths === m && !avgDateFrom ? "#fff" : "#a5b4fc",
+              }}
+            >
+              {m}M
+            </button>
+          ))}
+          <span style={{ color: "#6b7280", fontSize: 13 }}>or</span>
+          <input
+            type="date"
+            value={avgDateFrom}
+            onChange={(e) => setAvgDateFrom(e.target.value)}
+            style={{ background: "#312e81", border: "none", borderRadius: 8, padding: "6px 10px", color: "#e0e7ff", fontSize: 13 }}
+          />
+          <span style={{ color: "#6b7280", fontSize: 13 }}>–</span>
+          <input
+            type="date"
+            value={avgDateTo}
+            onChange={(e) => setAvgDateTo(e.target.value)}
+            style={{ background: "#312e81", border: "none", borderRadius: 8, padding: "6px 10px", color: "#e0e7ff", fontSize: 13 }}
+          />
+        </div>
+
+        {avgLoading && <div style={{ color: "#9ca3af", padding: 20 }}>Loading...</div>}
+
+        {avgData && !avgLoading && (
+          <>
+            {/* Total average card */}
+            <div style={{ background: "#1e1b4b", borderRadius: 12, padding: "20px 24px", marginBottom: 16 }}>
+              <div style={{ fontSize: 12, color: "#9ca3af", marginBottom: 4 }}>Monthly average</div>
+              <div style={{ fontSize: 32, fontWeight: 700, color: "#fff" }}>
+                ${avgData.total_avg.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+              </div>
+              <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 4 }}>
+                avg over {avgData.months_count} complete month{avgData.months_count !== 1 ? "s" : ""}
+                {avgData.months_count === 0 ? " — no complete months in range" : ` (${avgData.date_from} – ${avgData.date_to})`}
+              </div>
+            </div>
+
+            {/* Per-category table */}
+            {avgData.categories.length > 0 && (
+              <div style={{ background: "#1e1b4b", borderRadius: 12, padding: "20px 24px" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+                  <thead>
+                    <tr style={{ color: "#9ca3af", fontSize: 12, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                      <th style={{ textAlign: "left", paddingBottom: 10, fontWeight: 600 }}>Category</th>
+                      <th style={{ textAlign: "right", paddingBottom: 10, fontWeight: 600 }}>Avg / month</th>
+                      <th style={{ textAlign: "right", paddingBottom: 10, fontWeight: 600 }}>% of total</th>
+                      <th style={{ textAlign: "right", paddingBottom: 10, fontWeight: 600 }}>Months with spend</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {avgData.categories.map((cat: any, i: number) => (
+                      <tr
+                        key={cat.category}
+                        onClick={() => {
+                          const params = new URLSearchParams({ category: cat.category });
+                          if (avgDateFrom) params.set("dateFrom", avgDateFrom);
+                          if (avgDateTo) params.set("dateTo", avgDateTo);
+                          window.location.href = `/transactions?${params.toString()}`;
+                        }}
+                        style={{
+                          borderTop: "1px solid #312e81", cursor: "pointer",
+                        }}
+                        onMouseEnter={(e) => (e.currentTarget.style.background = "#312e81")}
+                        onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                      >
+                        <td style={{ padding: "10px 0", color: "#e0e7ff", textTransform: "capitalize" }}>{cat.category}</td>
+                        <td style={{ padding: "10px 0", textAlign: "right", color: "#c4b5fd", fontWeight: 600 }}>
+                          ${cat.avg.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                        </td>
+                        <td style={{ padding: "10px 0", textAlign: "right", color: "#9ca3af" }}>{cat.pct}%</td>
+                        <td style={{ padding: "10px 0", textAlign: "right", color: "#9ca3af" }}>
+                          {cat.months_with_spend} / {avgData.months_count}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
+        )}
+      </div>
     </div>
   );
 }
