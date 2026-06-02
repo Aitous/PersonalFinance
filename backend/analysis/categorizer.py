@@ -32,7 +32,7 @@ Valid categories:
 Fields per transaction:
 - id: transaction id (copy exactly as given)
 - category: one of the valid categories above
-- merchant_name: the canonical brand name, cleaned up — strip store numbers, location codes, booking reference codes, and payment terminal prefixes (SQ*, TST*, SAMPAY, etc.)
+- merchant_name: the canonical merchant or brand name only when it is directly supported by the cleaned transaction description; strip store numbers, location codes, reference codes, and payment-terminal prefixes (SQ*, TST*, SAMPAY, etc.). Do not infer from external knowledge. If cleanup leaves only location text or another non-merchant descriptor, return null instead of guessing.
 - city: city name if present in the description, otherwise null
 - is_online: true if the merchant is purely online, false otherwise
 - merchant_type: short phrase describing what the merchant does (e.g. "grocery store", "streaming service", "gas station")
