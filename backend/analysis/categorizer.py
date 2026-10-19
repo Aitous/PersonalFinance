@@ -46,10 +46,11 @@ Transactions:
 class TransactionEnrichment(BaseModel):
     id: str
     category: str
-    merchant_name: str
+    merchant_name: Optional[str] = None
     city: Optional[str] = None
     is_online: bool
     merchant_type: str
+    outcome: str = "success"
 
     @field_validator("category")
     @classmethod
@@ -67,6 +68,7 @@ def _fallback_enrichment(tx: Transaction) -> TransactionEnrichment:
         city=None,
         is_online=False,
         merchant_type="unknown",
+        outcome="fallback",
     )
 
 
@@ -87,11 +89,26 @@ class Categorizer:
         try:
             response = self._llm.complete_json(prompt)
             data = json.loads(response)
-            enrichments = [TransactionEnrichment(**item) for item in data]
-            result = {e.id: e for e in enrichments}
-        except (json.JSONDecodeError, KeyError, ValidationError) as exc:
+        except json.JSONDecodeError as exc:
             logger.warning("LLM response parsing failed (%s: %s); falling back to defaults", type(exc).__name__, exc)
             return {tx.id: _fallback_enrichment(tx) for tx in transactions}
+
+        if not isinstance(data, list):
+            logger.warning("LLM response must be an array; falling back to defaults")
+            return {tx.id: _fallback_enrichment(tx) for tx in transactions}
+
+        requested_ids = {tx.id for tx in transactions}
+        result = {}
+        for item in data:
+            try:
+                enrichment = TransactionEnrichment.model_validate(item)
+            except ValidationError:
+                logger.warning("Invalid enrichment item; preserving valid batch results")
+                continue
+            if enrichment.id not in requested_ids:
+                logger.warning("Ignoring enrichment for an unrequested transaction")
+                continue
+            result[enrichment.id] = enrichment
 
         for tx in transactions:
             if tx.id not in result:

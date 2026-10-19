@@ -36,7 +36,7 @@ cd PersonalFinance
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r backend/requirements.txt
 ```
 
 ### 3. Frontend
@@ -114,6 +114,6 @@ frontend/
 
 | Task | Model |
 |------|-------|
-| Transaction enrichment | `gemini-3.1-flash-lite` |
-| Savings tips | `gemini-3.1-pro-preview` |
+| Transaction enrichment | `gemini-3.5-flash-lite` |
+| AI insights and savings tips | `gemini-3.8-flash` |
 | Embeddings (semantic search) | local `sentence-transformers` |

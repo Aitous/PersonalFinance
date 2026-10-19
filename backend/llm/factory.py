@@ -8,8 +8,8 @@ from backend.llm.gemini_provider import GeminiProvider
 
 CONFIG_PATH = Path(__file__).parent.parent.parent / "config.json"
 
-GEMINI_DEFAULT_MODEL = "gemini-3.1-flash-lite"
-GEMINI_PRO_MODEL = "gemini-3.1-pro-preview"
+GEMINI_DEFAULT_MODEL = "gemini-3.5-flash-lite"
+GEMINI_PRO_MODEL = "gemini-3.8-flash"
 
 
 def get_llm_provider(provider_override: "str | None" = None, use_pro: bool = False):

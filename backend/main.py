@@ -29,6 +29,11 @@ def startup():
     init_db()
     import threading
     threading.Thread(target=_embed_all, daemon=True).start()
+    # Only persisted jobs created by an explicit request or successful import
+    # are resumed. Startup never creates a new LLM job.
+    from backend.jobs.enrichment import resume_interrupted_jobs, run_job
+    for job_id in resume_interrupted_jobs():
+        threading.Thread(target=run_job, args=(job_id,), daemon=True).start()
 
 @app.get("/health")
 def health():

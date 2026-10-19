@@ -96,7 +96,7 @@ def test_prior_month_wraps_to_december_for_january():
     assert result["prev_total"] == 80.0
 
 
-def test_subscriptions_due_within_30_days():
+def test_subscriptions_due_within_next_calendar_month():
     from backend.analysis.monthly_report import get_subscriptions_due
     from datetime import date
 
@@ -143,3 +143,40 @@ def test_inactive_subscriptions_excluded():
 
     result = get_subscriptions_due([sub], report_month_end=date(2026, 4, 30))
     assert result == []
+
+
+def test_monthly_due_date_clamps_january_31_to_february_end():
+    from backend.analysis.monthly_report import get_subscriptions_due
+
+    sub = MagicMock()
+    sub.description = "Monthly service"
+    sub.amount = 10.0
+    sub.frequency = "monthly"
+    sub.last_charged = date(2026, 1, 31)
+    sub.active = True
+
+    result = get_subscriptions_due([sub], report_month_end=date(2026, 1, 31))
+    assert result[0]["next_date"] == "2026-02-28"
+
+
+def test_annual_due_date_clamps_leap_day_and_stale_charge_is_not_rolled_forward():
+    from backend.analysis.monthly_report import get_subscriptions_due
+
+    annual = MagicMock()
+    annual.description = "Annual service"
+    annual.amount = 100.0
+    annual.frequency = "annual"
+    annual.last_charged = date(2024, 2, 29)
+    annual.active = True
+
+    stale = MagicMock()
+    stale.description = "Stale monthly service"
+    stale.amount = 5.0
+    stale.frequency = "monthly"
+    stale.last_charged = date(2024, 3, 31)
+    stale.active = True
+
+    result = get_subscriptions_due([annual, stale], report_month_end=date(2025, 1, 31))
+    assert result == [{
+        "description": "Annual service", "amount": 100.0, "next_date": "2025-02-28",
+    }]

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import re
 import statistics
 from collections import defaultdict
@@ -8,6 +10,7 @@ from backend.analysis.subscription_detector import (
     _normalize, MONTHLY_DAYS_MIN, MONTHLY_DAYS_MAX, ANNUAL_DAYS_MAX,
 )
 from backend.db.models import Transaction
+from backend.analysis.transaction_semantics import is_payment, purchase_amount, refund_amount
 
 # Strips payment terminal prefixes (Square, Toast, etc.) and store numbers
 _PREFIXES = re.compile(r'^(?:SAMPAY|TST\*|SQ\s*\*|UEP\*|SP\s+)\s*', re.IGNORECASE)
@@ -148,10 +151,15 @@ def get_price_increases(txs: List[Transaction]) -> List[dict]:
     return increases
 
 
-def get_merchant_breakdown(txs: List[Transaction]) -> List[dict]:
+def get_merchant_breakdown(txs: List[Transaction], merchant_aliases: dict[str, str] | None = None) -> List[dict]:
     groups: dict = defaultdict(list)
     for tx in txs:
         key = tx.merchant_name if tx.merchant_name else _normalize_merchant(tx.description)
+        if merchant_aliases:
+            seen = set()
+            while key in merchant_aliases and key not in seen:
+                seen.add(key)
+                key = merchant_aliases[key]
         groups[key].append(tx)
 
     merchants = []
@@ -276,52 +284,73 @@ def get_year_over_year(txs: List[Transaction]) -> dict:
     }
 
 
-def get_monthly_averages(txs: List[Transaction], date_from: date, date_to: date) -> dict:
+def get_monthly_averages(txs: List[Transaction], date_from: date, date_to: date, covered_months=None) -> dict:
+    """Average observed spend over full, non-current calendar months.
+
+    Empty months count as zero only when explicitly supplied in covered_months,
+    whose YYYY-MM values must come from imported statement-period evidence.
+    """
     today = date.today()
     current_month_key = today.strftime("%Y-%m")
-
     by_month: dict = defaultdict(lambda: defaultdict(float))
+    refunds_by_month: dict = defaultdict(float)
     for tx in txs:
-        if tx.date < date_from or tx.date > date_to:
+        if tx.date < date_from or tx.date > date_to or is_payment(tx):
             continue
         month_key = tx.date.strftime("%Y-%m")
-        if month_key == current_month_key:
-            continue
-        by_month[month_key][tx.category or "other"] += tx.amount
+        purchase = float(purchase_amount(tx))
+        refund = float(refund_amount(tx))
+        if purchase:
+            by_month[month_key][tx.category or "other"] += purchase
+        if refund:
+            refunds_by_month[month_key] += refund
 
-    complete_months = sorted(by_month.keys())
-    n = len(complete_months)
-    if n == 0:
-        return {"months_count": 0, "total_avg": 0.0, "categories": [], "date_from": date_from.isoformat(), "date_to": date_to.isoformat()}
+    # Only full calendar months inside the requested bounds are eligible.
+    import calendar
+    eligible = set()
+    year, month = date_from.year, date_from.month
+    while (year, month) <= (date_to.year, date_to.month):
+        key = f"{year:04d}-{month:02d}"
+        last_day = calendar.monthrange(year, month)[1]
+        if (year, month) != (today.year, today.month) and date_from <= date(year, month, 1) and date_to >= date(year, month, last_day):
+            eligible.add(key)
+        month += 1
+        if month > 12:
+            year, month = year + 1, 1
 
-    cat_totals: dict = defaultdict(float)
-    cat_month_counts: dict = defaultdict(int)
-    for month_key in complete_months:
-        for cat, amount in by_month[month_key].items():
-            cat_totals[cat] += amount
-            cat_month_counts[cat] += 1
+    observed_months = eligible.intersection(by_month.keys() | refunds_by_month.keys())
+    verified_months = set(covered_months or ()).intersection(eligible)
+    denominator_months = observed_months | verified_months
+    n = len(denominator_months)
+    gross_by_cat: dict = defaultdict(float)
+    refund_total = 0.0
+    for key in denominator_months:
+        for cat, amount in by_month[key].items():
+            gross_by_cat[cat] += amount
+        refund_total += refunds_by_month[key]
 
-    total_spend = sum(cat_totals.values())
-    total_avg = round(total_spend / n, 2)
-
-    # avg divides by n (all complete months), so months with zero spend count as $0 avg
-    categories = sorted(
-        [
-            {
-                "category": cat,
-                "avg": round(cat_totals[cat] / n, 2),
-                "pct": round(cat_totals[cat] / total_spend * 100, 1) if total_spend > 0 else 0.0,
-                "months_with_spend": cat_month_counts[cat],
-            }
-            for cat in cat_totals
-        ],
-        key=lambda x: -x["avg"],
-    )
-
+    gross = sum(gross_by_cat.values())
+    net = gross - refund_total
+    categories = sorted([
+        {"category": cat, "avg": round(amount / n, 2),
+         "pct": round(amount / gross * 100, 1) if gross else 0.0,
+         "months_with_spend": sum(by_month[key].get(cat, 0) > 0 for key in denominator_months)}
+        for cat, amount in gross_by_cat.items()
+    ], key=lambda row: -row["avg"]) if n else []
     return {
         "months_count": n,
-        "total_avg": total_avg,
+        "total_avg": round(gross / n, 2) if n else 0.0,
+        "gross_purchases": round(gross, 2),
+        "refunds": round(refund_total, 2),
+        "net_spending": round(net, 2),
         "categories": categories,
         "date_from": date_from.isoformat(),
         "date_to": date_to.isoformat(),
+        "coverage": {
+            "basis": "verified_statement_periods_and_observed_activity",
+            "observed_months": sorted(observed_months),
+            "verified_zero_months": sorted(verified_months - observed_months),
+            "unknown_months": sorted(eligible - denominator_months),
+            "note": "Observed transactions do not prove a complete statement period. Empty months are excluded unless import coverage explicitly verifies the full month.",
+        },
     }

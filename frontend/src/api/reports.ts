@@ -21,6 +21,9 @@ export interface MonthlyReport {
   year: number;
   month: number;
   total: number;
+  gross_total?: number;
+  refund_total?: number;
+  net_total?: number;
   prev_total: number;
   tx_count: number;
   categories: CategoryItem[];

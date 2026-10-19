@@ -1,32 +1,58 @@
 import json
+import threading
 from typing import List, Optional
 
 import numpy as np
-from fastapi import APIRouter, BackgroundTasks
+from fastapi import APIRouter, BackgroundTasks, Depends
 from sqlalchemy import select, or_
 
 from backend.db.database import get_session
 from backend.db.models import Transaction
-from backend.search.embedder import tx_to_text, embed_texts, embed_query, cosine_similarity_bulk
+from backend.analysis.merchant_normalizer import active_aliases, canonical_merchant
+from backend.transaction_filters import transaction_query
+from backend.search.embedder import tx_to_text, embedding_input_hash, embedding_is_current, EMBEDDING_MODEL_VERSION, embed_texts, embed_query, cosine_similarity_bulk
 
 router = APIRouter()
 
 SEMANTIC_THRESHOLD = 0.35   # minimum cosine similarity to include a result
 KEYWORD_SCORE = 1.0          # keyword matches always score 1.0
 TOP_K = 50
+_embed_lock = threading.Lock()
+
+
+def _index_status(txs, aliases=None):
+    aliases = aliases or {}
+    current = sum(embedding_is_current(tx, aliases) for tx in txs)
+    total = len(txs)
+    return {
+        "embedded_count": current,
+        "stale_embedding_count": total - current,
+        "total_transactions": total,
+        "index_status": "empty" if total == 0 else "ready" if current == total else "stale",
+    }
+
+
+@router.get("/search/index-status")
+def search_index_status():
+    with get_session() as session:
+        txs = session.execute(select(Transaction)).scalars().all()
+        aliases = active_aliases(session)
+        return _index_status(txs, aliases)
 
 
 @router.get("/search")
 def search_transactions(
     q: str,
     mode: str = "hybrid",  # "keyword" | "semantic" | "hybrid"
+    query=Depends(transaction_query),
 ):
     q = q.strip()
     if not q:
         return {"results": [], "mode": mode}
 
     with get_session() as session:
-        all_txs = session.execute(select(Transaction)).scalars().all()
+        all_txs = session.execute(query).scalars().all()
+        aliases = active_aliases(session)
 
         keyword_ids: set = set()
         if mode in ("keyword", "hybrid"):
@@ -36,7 +62,7 @@ def search_transactions(
                 if ql in (tx.description or "").lower()
                 or ql in (tx.category or "").lower()
                 or ql in (tx.metadata_ or "").lower()
-                or ql in (tx.merchant_name or "").lower()
+                or ql in (canonical_merchant(tx.merchant_name, aliases) or "").lower()
                 or ql in (tx.merchant_type or "").lower()
                 or ql in (tx.city or "").lower()
                 or ql in str(tx.amount)
@@ -45,7 +71,7 @@ def search_transactions(
         semantic_scores: dict = {}
         if mode in ("semantic", "hybrid"):
             # Only embed transactions that have embeddings stored
-            embedded = [tx for tx in all_txs if tx.embedding]
+            embedded = [tx for tx in all_txs if embedding_is_current(tx, aliases)]
             if embedded:
                 matrix = np.array([json.loads(tx.embedding) for tx in embedded], dtype=np.float32)
                 q_vec = embed_query(q)
@@ -62,7 +88,7 @@ def search_transactions(
             scored[tid] = max(scored.get(tid, 0.0), score)
 
         if not scored:
-            return {"results": [], "mode": mode, "embedded_count": len([t for t in all_txs if t.embedding])}
+            return {"results": [], "mode": mode, **_index_status(all_txs, aliases)}
 
         tx_map = {tx.id: tx for tx in all_txs}
         results = sorted(scored.items(), key=lambda x: -x[1])[:TOP_K]
@@ -76,7 +102,7 @@ def search_transactions(
                     "description": tx_map[tid].description,
                     "amount": tx_map[tid].amount,
                     "category": tx_map[tid].category,
-                    "merchant_name": tx_map[tid].merchant_name,
+                    "merchant_name": canonical_merchant(tx_map[tid].merchant_name, aliases),
                     "merchant_type": tx_map[tid].merchant_type,
                     "city": tx_map[tid].city,
                     "is_online": tx_map[tid].is_online,
@@ -90,33 +116,39 @@ def search_transactions(
                 if tid in tx_map
             ],
             "mode": mode,
-            "embedded_count": len([t for t in all_txs if t.embedding]),
-            "total_transactions": len(all_txs),
+            **_index_status(all_txs, aliases),
         }
 
 
 @router.post("/search/embed")
 def generate_embeddings(background_tasks: BackgroundTasks):
-    """Trigger embedding generation for all unembedded transactions."""
-    background_tasks.add_task(_embed_all)
+    """Trigger embedding generation for missing or stale transaction vectors."""
+    background_tasks.add_task(_embed_all, get_session)
     return {"status": "started"}
 
 
-def _embed_all():
-    """Background task: embed all transactions that don't have embeddings yet."""
-    with get_session() as session:
-        txs = session.execute(
-            select(Transaction).where(Transaction.embedding.is_(None))
-        ).scalars().all()
+def _embed_all(session_factory=None):
+    """Rebuild stale vectors without holding database transactions during model work."""
+    session_factory = session_factory or get_session
+    _embed_lock.acquire()
+    try:
+        with session_factory() as session:
+            aliases = active_aliases(session)
+            rows = session.execute(select(Transaction)).scalars().all()
+            snapshots = [(tx.id, tx_to_text(tx, aliases), embedding_input_hash(tx, aliases))
+                         for tx in rows if not embedding_is_current(tx, aliases)]
 
-        if not txs:
-            return
-
-        BATCH = 64
-        for i in range(0, len(txs), BATCH):
-            batch = txs[i:i + BATCH]
-            texts = [tx_to_text(tx) for tx in batch]
-            vecs = embed_texts(texts)
-            for tx, vec in zip(batch, vecs):
-                tx.embedding = json.dumps(vec.tolist())
-            session.commit()
+        for start in range(0, len(snapshots), 64):
+            batch = snapshots[start:start + 64]
+            vectors = embed_texts([text for _, text, _ in batch])
+            with session_factory() as session:
+                aliases = active_aliases(session)
+                for (tx_id, _text, expected_hash), vector in zip(batch, vectors):
+                    tx = session.get(Transaction, tx_id)
+                    if tx is None or embedding_input_hash(tx, aliases) != expected_hash:
+                        continue
+                    tx.embedding = json.dumps(vector.tolist())
+                    tx.embedding_input_hash = expected_hash
+                    tx.embedding_model_version = EMBEDDING_MODEL_VERSION
+    finally:
+        _embed_lock.release()

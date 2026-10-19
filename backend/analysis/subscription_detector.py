@@ -1,9 +1,11 @@
 import hashlib
+import json
 import re
 from collections import defaultdict
 from datetime import date
 from typing import List, Optional
 from backend.db.models import Subscription, Transaction
+from backend.analysis.transaction_semantics import is_payment, purchase_amount
 
 AMOUNT_TOLERANCE_PCT = 0.15   # 15% within a stable period
 MONTHLY_DAYS_MIN, MONTHLY_DAYS_MAX = 20, 40
@@ -20,27 +22,29 @@ def _normalize(description: str) -> str:
 
 class SubscriptionDetector:
     def detect(self, transactions: List[Transaction]) -> List[Subscription]:
-        expenses = [tx for tx in transactions if tx.amount > 0]
+        expenses = [tx for tx in transactions if purchase_amount(tx) > 0 and not is_payment(tx)]
 
         groups: dict = defaultdict(list)
         for tx in expenses:
             key = tx.merchant_name if tx.merchant_name else _normalize(tx.description)
+            # Keep cards distinct when account provenance is known; legacy rows
+            # without an account can still be grouped together.
+            key = (getattr(tx, "account_id", None), key)
             groups[key].append(tx)
 
         subscriptions: List[Subscription] = []
         seen_ids: set = set()
 
-        for description, txs in groups.items():
-            if len(txs) < 3:
-                continue
+        for (account_id, description), txs in groups.items():
             txs_sorted = sorted(txs, key=lambda t: t.date)
             frequency = self._detect_frequency(txs_sorted)
             if frequency is not None:
                 last_charged = txs_sorted[-1].date
-                base_amount = txs_sorted[-1].amount
-                sub_id = hashlib.md5(description.encode()).hexdigest()
+                base_amount = float(purchase_amount(txs_sorted[-1]))
+                identity = description if account_id is None else f"{account_id}:{description}"
+                sub_id = hashlib.md5(identity.encode()).hexdigest()
                 days_since = (date.today() - last_charged).days
-                active = days_since <= 40 if frequency == "monthly" else True
+                active = days_since <= 40 if frequency == "monthly" else days_since <= 400
                 subscriptions.append(Subscription(
                     id=sub_id,
                     description=description,
@@ -48,14 +52,16 @@ class SubscriptionDetector:
                     frequency=frequency,
                     last_charged=last_charged,
                     active=active,
+                    origin="detected",
+                    supporting_transaction_ids=json.dumps([tx.id for tx in txs_sorted]),
                 ))
                 seen_ids.add(sub_id)
                 continue
 
             # Usage-based detection: ≥5 charges, avg gap < 20 days, spans ≥2 calendar months
-            usage = self._detect_usage_based(description, txs_sorted)
+            usage = self._detect_usage_based(description, txs_sorted, account_id)
             if usage:
-                sub_id = hashlib.md5((description + "_usage").encode()).hexdigest()
+                sub_id = hashlib.md5(f"{account_id or ''}:{description}_usage".encode()).hexdigest()
                 if sub_id not in seen_ids:
                     subscriptions.append(usage)
                     seen_ids.add(sub_id)
@@ -67,7 +73,7 @@ class SubscriptionDetector:
         "api service", "software", "streaming service", "digital service",
     }
 
-    def _detect_usage_based(self, description: str, txs_sorted: List[Transaction]) -> Optional[Subscription]:
+    def _detect_usage_based(self, description: str, txs_sorted: List[Transaction], account_id=None) -> Optional[Subscription]:
         if len(txs_sorted) < 5:
             return None
 
@@ -89,7 +95,7 @@ class SubscriptionDetector:
         from collections import defaultdict as _dd
         by_month: dict = _dd(float)
         for tx in txs_sorted:
-            by_month[tx.date.strftime("%Y-%m")] += tx.amount
+            by_month[tx.date.strftime("%Y-%m")] += float(purchase_amount(tx))
         today = date.today()
         current_month_key = today.strftime("%Y-%m")
         complete_months = {m: v for m, v in by_month.items() if m != current_month_key}
@@ -99,7 +105,7 @@ class SubscriptionDetector:
 
         last_charged = txs_sorted[-1].date
         days_since = (today - last_charged).days
-        sub_id = hashlib.md5((description + "_usage").encode()).hexdigest()
+        sub_id = hashlib.md5(f"{account_id or ''}:{description}_usage".encode()).hexdigest()
         return Subscription(
             id=sub_id,
             description=f"{description} (usage-based)",
@@ -107,6 +113,8 @@ class SubscriptionDetector:
             frequency="monthly",
             last_charged=last_charged,
             active=days_since <= 40,
+            origin="detected",
+            supporting_transaction_ids=json.dumps([tx.id for tx in txs_sorted]),
         )
 
     def _detect_frequency(self, txs: List[Transaction]) -> Optional[str]:
@@ -130,7 +138,7 @@ class SubscriptionDetector:
         # This tolerates historical rate changes (e.g. insurance) while
         # still rejecting variable-spend merchants like grocery stores.
         recent = txs_sorted[-6:]
-        amounts = [tx.amount for tx in recent]
+        amounts = [float(purchase_amount(tx)) for tx in recent]
         avg = sum(amounts) / len(amounts)
         if avg > 0 and (max(amounts) - min(amounts)) / avg > AMOUNT_TOLERANCE_PCT:
             return None

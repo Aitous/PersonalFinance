@@ -143,3 +143,40 @@ def test_categorize_partial_llm_response():
     assert fallback.city is None
     assert fallback.is_online is False
     assert fallback.merchant_type == "unknown"
+
+
+def _enrichment(tx_id, **overrides):
+    return dict(id=tx_id, category="groceries", merchant_name="Market",
+                city=None, is_online=False, merchant_type="grocery store", **overrides)
+
+
+def test_null_merchant_preserves_category():
+    llm = MagicMock()
+    item = _enrichment("tx1")
+    item["merchant_name"] = None
+    llm.complete_json.return_value = json.dumps([item])
+    result = Categorizer(llm).categorize([make_tx("tx1", "UNCLEAR")])
+    assert result["tx1"].category == "groceries"
+    assert result["tx1"].merchant_name is None
+
+
+def test_invalid_item_does_not_discard_valid_peer():
+    llm = MagicMock()
+    llm.complete_json.return_value = json.dumps([
+        {"id": "tx1"}, _enrichment("tx2"), _enrichment("unrequested"), None,
+    ])
+    result = Categorizer(llm).categorize([
+        make_tx("tx1", "UNCLEAR"), make_tx("tx2", "MARKET"),
+    ])
+    assert set(result) == {"tx1", "tx2"}
+    assert result["tx1"].merchant_type == "unknown"
+    assert result["tx2"].category == "groceries"
+
+
+@pytest.mark.parametrize("payload", [{"id": "tx1"}, None, 42, "text"])
+def test_non_array_response_falls_back(payload):
+    llm = MagicMock()
+    llm.complete_json.return_value = json.dumps(payload)
+    result = Categorizer(llm).categorize([make_tx("tx1", "UNCLEAR")])
+    assert result["tx1"].category == "other"
+    assert result["tx1"].merchant_type == "unknown"

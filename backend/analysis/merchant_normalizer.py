@@ -1,106 +1,85 @@
-"""
-Post-enrichment fuzzy deduplication for merchant names.
-
-Groups merchant names that are likely the same merchant (high string similarity
-or one is a prefix/suffix of the other), then unifies all variants to the most
-frequently occurring name in the database.
-"""
-from difflib import SequenceMatcher
+"""Suggest and apply reversible merchant aliases without rewriting source values."""
+from __future__ import annotations
 from collections import defaultdict
+from difflib import SequenceMatcher
+
 from sqlalchemy import select
+
 from backend.db.database import get_session
-from backend.db.models import Transaction
+from backend.db.models import MerchantAlias, Transaction
 
-SIMILARITY_THRESHOLD = 0.88  # SequenceMatcher ratio to consider names the same merchant
+SIMILARITY_THRESHOLD = 0.88
 
 
-def _clean(s: str) -> str:
-    return "".join(c.lower() for c in s if c.isalnum() or c.isspace()).strip()
+def _clean(value: str) -> str:
+    return "".join(c.lower() for c in value if c.isalnum() or c.isspace()).strip()
 
 
 def _are_same_merchant(a: str, b: str) -> bool:
     ca, cb = _clean(a), _clean(b)
-
-    # Exact match after stripping punctuation/case
-    if ca == cb:
-        return True
-
-    # Pure fuzzy similarity — no substring logic to avoid city-prefix false positives
-    return SequenceMatcher(None, ca, cb).ratio() >= SIMILARITY_THRESHOLD
+    return ca == cb or SequenceMatcher(None, ca, cb).ratio() >= SIMILARITY_THRESHOLD
 
 
 def build_canonical_map(merchant_counts: dict[str, int]) -> dict[str, str]:
-    """
-    Given {merchant_name: tx_count}, return {variant -> canonical_name}.
-    Canonical name = the most frequent name in each cluster.
-    """
-    names = list(merchant_counts.keys())
-    # Union-Find to group similar names
-    parent = {n: n for n in names}
+    names = list(merchant_counts)
+    parent = {name: name for name in names}
 
-    def find(x: str) -> str:
-        while parent[x] != x:
-            parent[x] = parent[parent[x]]
-            x = parent[x]
-        return x
-
-    def union(x: str, y: str) -> None:
-        px, py = find(x), find(y)
-        if px != py:
-            # Merge smaller cluster into larger (by tx count)
-            if merchant_counts.get(px, 0) >= merchant_counts.get(py, 0):
-                parent[py] = px
-            else:
-                parent[px] = py
+    def find(name):
+        while parent[name] != name:
+            parent[name] = parent[parent[name]]
+            name = parent[name]
+        return name
 
     for i, a in enumerate(names):
         for b in names[i + 1:]:
             if _are_same_merchant(a, b):
-                union(a, b)
-
-    # For each cluster, pick the most frequent name as canonical
-    clusters: dict[str, list[str]] = defaultdict(list)
+                ra, rb = find(a), find(b)
+                if ra != rb:
+                    if merchant_counts.get(ra, 0) >= merchant_counts.get(rb, 0):
+                        parent[rb] = ra
+                    else:
+                        parent[ra] = rb
+    clusters = defaultdict(list)
     for name in names:
         clusters[find(name)].append(name)
-
-    canonical_map: dict[str, str] = {}
+    result = {}
     for members in clusters.values():
-        canonical = max(members, key=lambda n: merchant_counts.get(n, 0))
-        for m in members:
-            if m != canonical:
-                canonical_map[m] = canonical
+        canonical = max(members, key=lambda name: merchant_counts.get(name, 0))
+        result.update({name: canonical for name in members if name != canonical})
+    return result
 
-    return canonical_map
+
+def active_aliases(session=None) -> dict[str, str]:
+    if session is not None:
+        aliases = {row.alias: row.canonical for row in session.execute(
+            select(MerchantAlias).where(MerchantAlias.enabled.is_(True))
+        ).scalars().all()}
+        return {alias: canonical_merchant(alias, aliases) for alias in aliases}
+    with get_session() as owned:
+        return active_aliases(owned)
+
+
+def canonical_merchant(name: str | None, aliases: dict[str, str]) -> str | None:
+    """Resolve a display alias without changing the extracted transaction value."""
+    seen = set()
+    while name in aliases and name not in seen:
+        seen.add(name)
+        name = aliases[name]
+    return name
 
 
 def normalize_merchants() -> dict:
-    """
-    Scan all transactions, find merchant name variants, unify them in-place.
-    Returns {"merged": int, "groups": list} for reporting.
-    """
+    """Return fuzzy proposals and count explicit aliases currently applied."""
     with get_session() as session:
-        txs = session.execute(
-            select(Transaction).where(Transaction.merchant_name.isnot(None))
-        ).scalars().all()
-
-        # Count occurrences per merchant name
-        counts: dict[str, int] = defaultdict(int)
+        txs = session.execute(select(Transaction).where(Transaction.merchant_name.is_not(None))).scalars().all()
+        counts = defaultdict(int)
         for tx in txs:
             counts[tx.merchant_name] += 1
-
-        canonical_map = build_canonical_map(dict(counts))
-        if not canonical_map:
-            return {"merged": 0, "groups": []}
-
-        merged = 0
-        groups = []
-        for variant, canonical in canonical_map.items():
-            affected = [tx for tx in txs if tx.merchant_name == variant]
-            for tx in affected:
-                tx.merchant_name = canonical
-            merged += len(affected)
-            groups.append({"from": variant, "to": canonical, "count": len(affected)})
-
-        session.commit()
-
-    return {"merged": merged, "groups": groups}
+        proposals = build_canonical_map(dict(counts))
+        accepted = active_aliases(session)
+        groups = [{"from": alias, "to": canonical, "count": counts[alias],
+                   "accepted": accepted.get(alias) == canonical}
+                  for alias, canonical in proposals.items()]
+        merged = sum(count for alias, count in counts.items()
+                     if canonical_merchant(alias, accepted) != alias)
+        return {"merged": merged, "groups": groups}

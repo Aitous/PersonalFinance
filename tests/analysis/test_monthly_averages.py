@@ -80,3 +80,39 @@ def test_months_with_spend_counts_correctly():
     cats = {c["category"]: c for c in result["categories"]}
     assert cats["travel"]["months_with_spend"] == 1
     assert cats["dining"]["months_with_spend"] == 3
+
+
+def test_partial_boundary_months_are_excluded_and_unknown_months_are_reported():
+    from backend.analysis.insights import get_monthly_averages
+    txs = [
+        _tx(200.0, "dining", 2026, 1),
+        _tx(100.0, "dining", 2026, 2),
+        _tx(400.0, "dining", 2026, 3),
+    ]
+    result = get_monthly_averages(txs, date_from=date(2026, 1, 15), date_to=date(2026, 3, 10))
+    assert result["months_count"] == 1
+    assert result["total_avg"] == 100.0
+    assert result["coverage"]["unknown_months"] == []
+
+
+def test_empty_complete_months_are_unknown_until_coverage_is_verified():
+    from backend.analysis.insights import get_monthly_averages
+    txs = [_tx(90.0, "dining", 2026, 1)]
+    result = get_monthly_averages(txs, date_from=date(2026, 1, 1), date_to=date(2026, 3, 31))
+    assert result["months_count"] == 1
+    assert result["total_avg"] == 90.0
+    assert result["coverage"]["unknown_months"] == ["2026-02", "2026-03"]
+
+
+def test_verified_empty_month_counts_as_zero_and_refunds_are_reported():
+    from backend.analysis.insights import get_monthly_averages
+    txs = [_tx(100.0, "dining", 2026, 1), _tx(-20.0, "dining", 2026, 1)]
+    result = get_monthly_averages(
+        txs, date_from=date(2026, 1, 1), date_to=date(2026, 2, 28), covered_months={"2026-02"}
+    )
+    assert result["months_count"] == 2
+    assert result["total_avg"] == 50.0
+    assert result["gross_purchases"] == 100.0
+    assert result["refunds"] == 20.0
+    assert result["net_spending"] == 80.0
+    assert result["coverage"]["verified_zero_months"] == ["2026-02"]

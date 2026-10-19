@@ -72,8 +72,10 @@ def test_get_transactions_parses_response():
 
     assert len(txs) == 2
     wf = next(t for t in txs if "WHOLE FOODS" in t.description)
-    assert wf.amount == -84.20
+    assert wf.amount == 84.20
+    assert wf.original_amount == -84.20
     assert wf.source == "chase"
     assert wf.date == date(2025, 1, 15)
     payment = next(t for t in txs if "PAYMENT" in t.description)
-    assert payment.amount == 50.00
+    assert payment.amount == -50.00
+    assert payment.kind == "payment"

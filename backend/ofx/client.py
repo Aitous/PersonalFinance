@@ -1,12 +1,13 @@
-import hashlib
 import re
 import uuid
 from datetime import date, datetime, timezone
+from decimal import Decimal
 from typing import List
 
 import requests
 
 from backend.db.models import Transaction
+from backend.parsers.csv_parser import stable_transaction_id, classify_kind, normalize_amount
 from backend.ofx.banks import BANK_CONFIG
 
 _OFX_HEADER = (
@@ -147,18 +148,21 @@ def get_transactions(
     _check_signon(text)
 
     txs: List[Transaction] = []
+    occurrences: dict[tuple, int] = {}
     for trn in _blocks(text, "STMTTRN"):
         try:
             fitid = _leaf(trn, "FITID")
             dt_posted = _parse_ofx_date(_leaf(trn, "DTPOSTED"))
-            amount = float(_leaf(trn, "TRNAMT"))
+            original_amount = float(_leaf(trn, "TRNAMT"))
+            amount = float(normalize_amount(bank, Decimal(str(original_amount)), ofx=True))
             name = _leaf(trn, "NAME") or _leaf(trn, "MEMO") or "Unknown"
             memo = _leaf(trn, "MEMO")
             trn_type = _leaf(trn, "TRNTYPE")
 
-            tx_id = hashlib.sha256(
-                f"{bank}{dt_posted}{amount}{name}".encode()
-            ).hexdigest()[:16]
+            occurrence_key = (dt_posted, name.casefold(), round(amount, 2))
+            occurrences[occurrence_key] = occurrences.get(occurrence_key, 0) + 1
+            tx_id = stable_transaction_id(bank, dt_posted, name, amount, None,
+                occurrence=occurrences[occurrence_key], fitid=f"{acct_id}:{fitid}" if fitid else None)
 
             import json
             metadata = json.dumps({
@@ -174,6 +178,11 @@ def get_transactions(
                 date=dt_posted,
                 description=name,
                 amount=amount,
+                original_amount=original_amount,
+                amount_minor=round(amount * 100),
+                currency="USD",
+                bank_fitid=fitid or None,
+                kind=classify_kind(name, trn_type, memo, amount),
                 metadata_=metadata,
                 raw_csv_row=trn.strip(),
             ))

@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getInsights } from "../api/client";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, LabelList } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
+import { transactionFiltersUrl } from "../api/transactionFilters";
+import { monthlyAverageRange } from "../api/reliabilityHelpers";
 
 const SECTION = {
   background: "#fff", borderRadius: 10, padding: 24,
@@ -159,7 +161,7 @@ export function Insights() {
                   <tr
                     key={m.name}
                     style={{ borderTop: "1px solid #f0f0f0", cursor: "pointer" }}
-                    onClick={() => navigate(`/transactions?merchant=${encodeURIComponent(m.name)}`)}
+                    onClick={() => navigate(transactionFiltersUrl({ merchant: m.name }))}
                     onMouseEnter={(e) => (e.currentTarget.style.background = "#f9fafb")}
                     onMouseLeave={(e) => (e.currentTarget.style.background = "")}
                   >
@@ -198,9 +200,9 @@ export function Insights() {
         <ResponsiveContainer width="100%" height={220}>
           <BarChart data={day_of_week.days} margin={{ top: 20, right: 8, bottom: 4, left: 48 }}>
             <XAxis dataKey="day_name" tick={{ fontSize: 12 }} tickFormatter={(v: string) => v.slice(0, 3)} />
-            <YAxis tick={{ fontSize: 11 }} tickFormatter={(v: number) => `$${(v / 1000).toFixed(1)}k`} width={60} />
+            <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `$${(Number(v) / 1000).toFixed(1)}k`} width={60} />
             <Bar dataKey="total" radius={[4, 4, 0, 0]}
-              label={{ position: "top", fontSize: 11, fill: "#6b7280", formatter: (v: number) => `$${(v / 1000).toFixed(1)}k` }}>
+              label={{ position: "top", fontSize: 11, fill: "#6b7280", formatter: (v) => `$${(Number(v ?? 0) / 1000).toFixed(1)}k` }}>
               {day_of_week.days.map((d: any) => (
                 <Cell key={d.day} fill={d.day >= 5 ? "#f59e0b" : "#7c6af7"} />
               ))}
@@ -227,7 +229,7 @@ export function Insights() {
           const lastYear = String(year_over_year.years[year_over_year.years.length - 1].year);
           return (b[lastYear] ?? 0) - (a[lastYear] ?? 0);
         }).slice(0, 8);
-        const yearKeys = year_over_year.years.map((y: any) => String(y.year));
+        const yearKeys: string[] = year_over_year.years.map((y: any) => String(y.year));
         const YEAR_COLORS = ["#a5b4fc", "#c4b5fd", "#7c6af7"];
 
         return (
@@ -273,9 +275,9 @@ export function Insights() {
             <ResponsiveContainer width="100%" height={220}>
               <BarChart data={chartData} margin={{ top: 4, right: 8, bottom: 4, left: 8 }}>
                 <XAxis dataKey="category" tick={{ fontSize: 11 }} />
-                <YAxis tick={{ fontSize: 11 }} tickFormatter={(v: number) => `$${(v / 1000).toFixed(0)}k`} />
+                <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `$${(Number(v) / 1000).toFixed(0)}k`} />
                 <Tooltip
-                  formatter={(value: number, name: string) => [`$${(value as number).toFixed(0)}`, name]}
+                  formatter={(value, name) => [`$${Number(value ?? 0).toFixed(0)}`, String(name)]}
                   contentStyle={{ background: "#1a1a2e", border: "none", borderRadius: 8, color: "#fff", fontSize: 12 }}
                 />
                 {yearKeys.map((yr, i) => (
@@ -357,17 +359,11 @@ export function Insights() {
                     {avgData.categories.map((cat: any) => (
                       <tr
                         key={cat.category}
-                        onClick={() => {
-                          const params = new URLSearchParams({ category: cat.category });
-                          if (avgDateFrom) params.set("dateFrom", avgDateFrom);
-                          if (avgDateTo) params.set("dateTo", avgDateTo);
-                          navigate(`/transactions?${params.toString()}`);
-                        }}
-                        style={{ borderTop: "1px solid #e5e7eb", cursor: "pointer" }}
+                        style={{ borderTop: "1px solid #e5e7eb" }}
                         onMouseEnter={(e) => (e.currentTarget.style.background = "#f9fafb")}
                         onMouseLeave={(e) => (e.currentTarget.style.background = "")}
                       >
-                        <td style={{ padding: "10px 0", color: "#111827", textTransform: "capitalize" }}>{cat.category}</td>
+                        <td style={{ padding: "10px 0", color: "#111827", textTransform: "capitalize" }}><button onClick={() => navigate(transactionFiltersUrl(monthlyAverageRange(cat.category, avgData.date_from, avgData.date_to)))} aria-label={`View ${cat.category} transactions for ${avgData.date_from} through ${avgData.date_to}`} style={{ border: 0, background: "transparent", color: "#5b21b6", font: "inherit", textDecoration: "underline", cursor: "pointer", padding: 0 }}>{cat.category}</button></td>
                         <td style={{ padding: "10px 0", textAlign: "right", color: "#7c3aed", fontWeight: 600 }}>
                           ${cat.avg.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                         </td>
