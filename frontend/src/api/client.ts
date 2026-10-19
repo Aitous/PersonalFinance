@@ -19,6 +19,9 @@ export interface TransactionDetailsPatch {
 export const updateTransactionDetails = (id: string, details: TransactionDetailsPatch) =>
   api.patch(`/transactions/${id}`, details).then((r) => r.data);
 
+export const deleteTransaction = (id: string) =>
+  api.delete(`/transactions/${id}`).then((r) => r.data);
+
 export const getSubscriptions = () =>
   api.get("/subscriptions").then((r) => r.data);
 

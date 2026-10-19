@@ -4,7 +4,7 @@ from typing import Literal, Optional
 from pydantic import BaseModel, ConfigDict, field_validator
 from sqlalchemy import select
 from backend.db.database import get_session, invalidate_derived_data
-from backend.db.models import MerchantAlias, Subscription, Transaction
+from backend.db.models import ImportedRow, MerchantAlias, Subscription, Transaction
 from backend.transaction_filters import transaction_query
 from backend.analysis.merchant_normalizer import active_aliases, canonical_merchant
 
@@ -110,6 +110,24 @@ def update_transaction_fields(tx_id: str, body: TransactionCorrection, backgroun
     from backend.routes.search import _embed_all
     background_tasks.add_task(_embed_all, get_session)
     return result
+
+
+@router.delete("/transactions/{tx_id}")
+def delete_transaction(tx_id: str):
+    with get_session() as session:
+        tx = session.get(Transaction, tx_id)
+        if not tx:
+            raise HTTPException(status_code=404, detail="Transaction not found")
+        audit_rows = session.execute(select(ImportedRow).where(
+            ImportedRow.transaction_id == tx_id
+        )).scalars().all()
+        for row in audit_rows:
+            row.transaction_id = None
+            row.status = "deleted"
+            row.reason = "Transaction deleted by user"
+        session.delete(tx)
+        invalidate_derived_data(session)
+    return {"deleted": tx_id}
 
 @router.get("/subscriptions")
 def list_subscriptions():

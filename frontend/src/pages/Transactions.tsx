@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
-import { getTransactions, updateTransactionCategory, updateTransactionDetails, searchTransactions } from "../api/client";
+import { getTransactions, updateTransactionCategory, updateTransactionDetails, deleteTransaction, searchTransactions } from "../api/client";
 import { readTransactionFilters, writeTransactionFilters } from "../api/transactionFilters";
 
 const CATEGORIES = [
@@ -43,6 +43,8 @@ export function Transactions() {
   const [detailsDraft, setDetailsDraft] = useState({ merchant_name: "", city: "", merchant_type: "", is_online: "unknown" });
   const [detailsSaving, setDetailsSaving] = useState(false);
   const [detailsError, setDetailsError] = useState("");
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [filterCategory, setFilterCategory] = useState(initialFilters.category ?? "");
   const [filterSource, setFilterSource] = useState(initialFilters.source ?? "");
@@ -183,6 +185,27 @@ export function Transactions() {
         ?? "Could not save transaction details.";
       setDetailsError(message);
     } finally { setDetailsSaving(false); }
+  };
+
+  const handleDelete = async (tx: Transaction) => {
+    const confirmed = window.confirm(`Delete this transaction?\n\n${tx.description} · ${tx.date}\n\nYou can re-import it from the original statement.`);
+    if (!confirmed) return;
+    setDeletingId(tx.id);
+    setDeleteError("");
+    try {
+      await deleteTransaction(tx.id);
+      setTxs((current) => current.filter((item) => item.id !== tx.id));
+      setExpandedId((current) => current === tx.id ? null : current);
+      setEditingId((current) => current === tx.id ? null : current);
+      setDetailsEditorId((current) => current === tx.id ? null : current);
+    } catch (error) {
+      const message = (error as { response?: { data?: { detail?: string } }; message?: string })?.response?.data?.detail
+        ?? (error as { message?: string })?.message
+        ?? "Could not delete transaction. Please try again.";
+      setDeleteError(message);
+    } finally {
+      setDeletingId(null);
+    }
   };
 
   const toggleSort = (field: typeof sortField) => {
@@ -333,6 +356,7 @@ export function Transactions() {
       <div role="status" style={{ marginBottom: 12, fontSize: 13, color: invalidRange || loadError ? "#b91c1c" : "#6b7280" }}>
         {invalidRange ? "Check your ranges: minimum must not exceed maximum, and From must not be after To." : loadError || ((isSearching || pending) ? "Loading transactions…" : `${txs.length} matching transactions${searchQuery.trim() ? " (up to 50 search matches)" : ""}`)}
       </div>
+      {deleteError && <div role="alert" style={{ color: "#b91c1c", fontSize: 13, marginBottom: 12 }}>{deleteError}</div>}
 
       <div style={{ background: "#fff", borderRadius: 10, boxShadow: "0 1px 4px rgba(0,0,0,0.07)", overflowX: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
@@ -347,6 +371,7 @@ export function Transactions() {
               <th aria-sort={sortField === "amount" ? (sortDir === "asc" ? "ascending" : "descending") : "none"} style={{ padding: "12px 16px", textAlign: "right", whiteSpace: "nowrap" }}>
                 <button onClick={() => toggleSort("amount")} style={{ border: 0, background: "transparent", font: "inherit", fontWeight: 600, cursor: "pointer", padding: 0 }}>Amount {sortField === "amount" ? (sortDir === "desc" ? "↓" : "↑") : <span style={{ color: "#9ca3af" }}>↕</span>}</button>
               </th>
+              <th style={{ padding: "12px 16px", whiteSpace: "nowrap" }}>Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -395,10 +420,17 @@ export function Transactions() {
                     <td style={{ padding: "10px 16px", textAlign: "right", color: tx.amount < 0 ? "#e05" : "#0a0", fontWeight: 600 }}>
                       {tx.amount < 0 ? "-" : "+"}${Math.abs(tx.amount).toFixed(2)}
                     </td>
+                    <td style={{ padding: "10px 16px" }} onClick={(event) => event.stopPropagation()}>
+                      <button type="button" aria-label={`Delete ${tx.description} on ${tx.date}`}
+                        disabled={deletingId !== null} onClick={() => void handleDelete(tx)}
+                        style={{ border: "1px solid #fecaca", borderRadius: 6, background: "#fff", color: "#b91c1c", padding: "5px 9px", cursor: deletingId ? "wait" : "pointer", opacity: deletingId ? 0.65 : 1 }}>
+                        {deletingId === tx.id ? "Deleting…" : "Delete"}
+                      </button>
+                    </td>
                   </tr>
                   {isExpanded && (
                     <tr key={`${tx.id}-detail`} style={{ background: "#f9fafb" }}>
-                      <td colSpan={5} style={{ padding: "10px 24px 14px", borderTop: "1px solid #e5e7eb" }} onClick={(event) => event.stopPropagation()}>
+                      <td colSpan={6} style={{ padding: "10px 24px 14px", borderTop: "1px solid #e5e7eb" }} onClick={(event) => event.stopPropagation()}>
                         <div style={{ display: "flex", gap: 32, flexWrap: "wrap", fontSize: 13, color: "#4b5563" }}>
                           <div><span style={{ color: "#9ca3af" }}>Merchant</span><br /><strong>{tx.merchant_name || "Unknown"}</strong></div>
                           <div><span style={{ color: "#9ca3af" }}>Type</span><br /><strong>{tx.merchant_type || "Unknown"}</strong></div>
