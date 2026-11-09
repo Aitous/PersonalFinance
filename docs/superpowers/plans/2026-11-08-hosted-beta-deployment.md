@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Deploy the existing invite-only PersonalFinance app with a hosted React frontend, always-on FastAPI API, Supabase Auth/Postgres, and the current owner’s data safely migrated.
+**Goal:** Deploy the existing invite-only PersonalFinance app with a hosted React frontend, a free-preview FastAPI API, Supabase Auth/Postgres, and the current owner’s data safely migrated.
 
-**Architecture:** Use Render Static Site for the Vite frontend and a paid Render Web Service for the API, with the existing Supabase project as Auth provider and PostgreSQL database. Keep all database, encryption, Plaid, and model secrets in server-side service environment variables; expose only the Supabase URL/publishable key and API URL to the frontend. Complete Auth redirect/email configuration before inviting the owner, migrate the local owner data once, then reconnect Plaid.
+**Architecture:** Use Render Static Site for the Vite frontend and a free Render Web Service for the API preview, with the existing Supabase project as Auth provider and PostgreSQL database. The API may sleep after idle time. Keep all database, encryption, Plaid, and model secrets in server-side service environment variables; expose only the Supabase URL/publishable key and API URL to the frontend. Complete Auth redirect/email configuration before inviting the owner, migrate the local owner data once, then reconnect Plaid.
 
 **Tech Stack:** React 19, Vite, FastAPI, Uvicorn, SQLAlchemy, Supabase Auth/Postgres, Render Blueprint.
 
@@ -17,7 +17,7 @@
 - Keep public Supabase signups disabled; verify HTTPS redirects and owner email delivery before the owner invite. Require custom SMTP with a verified domain before inviting non-team beta users.
 - Do not run the owner migration against an owner that already has application rows.
 - Store no bank or transaction data on Render's ephemeral filesystem; keep it in Supabase Postgres and encrypt Plaid tokens with the configured application key.
-- Preserve all existing user work in the current dirty workspace; limit this plan’s initial implementation to new hosting config/docs files.
+- Preserve all existing user work in the current workspace; keep local database backups, screenshots, and browser artifacts out of the deployment branch.
 - Do not create a paid hosting service, send invites, migrate user data, or trigger Plaid pulls without verifying the target and expected charge/action first.
 
 ## Review Focus
