@@ -1,12 +1,25 @@
 """Shared ingestion identity and overlap reconciliation helpers."""
 from collections import defaultdict
 import json
+import re
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from backend.db.models import Transaction
 from backend.parsers.csv_parser import _make_id
+from backend.auth import current_owner_id
+
+
+def namespace_transaction_ids(transactions: list[Transaction]) -> None:
+    """Keep globally-primary-keyed transaction IDs unique across accounts."""
+    owner_id = current_owner_id()
+    if owner_id == "local-owner":
+        return
+    prefix = f"{owner_id}:"
+    for tx in transactions:
+        if tx.id and not tx.id.startswith(prefix):
+            tx.id = prefix + tx.id
 
 
 def reconcile_account_overlaps(session: Session, transactions: list[Transaction]) -> dict[str, str]:
@@ -48,6 +61,55 @@ def reconcile_account_overlaps(session: Session, transactions: list[Transaction]
                 used_ids.add(candidate.id)
                 remap[row.id] = candidate.id
                 row.id = candidate.id
+    return remap
+
+
+def reconcile_unassigned_description_overlaps(session: Session, transactions: list[Transaction]) -> dict[str, str]:
+    """Match unassigned CSV rows when a bank export truncates the description.
+
+    This conservative fallback requires the same bank, date, amount, no account or
+    FITID, and one description to be a prefix of the other after whitespace folding.
+    A stored row can satisfy only one incoming row, preserving repeated purchases.
+    """
+    grouped: dict[tuple, list[Transaction]] = defaultdict(list)
+    for tx in transactions:
+        if tx.account_id is None and not tx.bank_fitid:
+            grouped[(tx.source, tx.date, round(float(tx.amount), 2))].append(tx)
+
+    def normalize_description(value: str) -> str:
+        return re.sub(r"\s+", " ", (value or "").strip()).casefold()
+
+    remap: dict[str, str] = {}
+    for (source, tx_date, amount), incoming in grouped.items():
+        existing = session.execute(
+            select(Transaction).where(
+                Transaction.source == source,
+                Transaction.account_id.is_(None),
+                Transaction.bank_fitid.is_(None),
+                Transaction.date == tx_date,
+                Transaction.amount == amount,
+            ).order_by(Transaction.id)
+        ).scalars().all()
+        used_ids = set()
+        existing_by_id = {row.id: row for row in existing}
+        for row in incoming:
+            if row.id in existing_by_id:
+                used_ids.add(row.id)
+        for row in incoming:
+            if row.id in existing_by_id:
+                continue
+            incoming_description = normalize_description(row.description)
+            if len(incoming_description) < 5:
+                continue
+            candidates = [old for old in existing if old.id not in used_ids and (
+                normalize_description(old.description).startswith(incoming_description)
+                or incoming_description.startswith(normalize_description(old.description))
+            )]
+            if len(candidates) == 1:
+                old = candidates[0]
+                used_ids.add(old.id)
+                remap[row.id] = old.id
+                row.id = old.id
     return remap
 
 

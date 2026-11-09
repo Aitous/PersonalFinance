@@ -25,12 +25,15 @@ class SavingsAdvisor:
         )
 
         subs = subscriptions or []
-        monthly_subs = [s for s in subs if s["frequency"] == "monthly"]
-        annual_subs = [s for s in subs if s["frequency"] == "annual"]
-        sub_monthly = sum(s["amount"] for s in monthly_subs) + sum(s["amount"] / 12 for s in annual_subs)
+        sub_monthly = sum(
+            s["monthly_amount"] if "monthly_amount" in s else
+            (s["amount"] / 12 if s["frequency"] == "annual" else s["amount"])
+            for s in subs
+        )
         subs_text = "\n".join(
-            f"- {s['name']}: ${s['amount']:.2f}/{s['frequency']}"
-            for s in sorted(subs, key=lambda x: -x["amount"])
+            (f"- {s['name']}: ${s['monthly_amount']:.2f}/mo estimated (billed {s['frequency']})"
+             if "monthly_amount" in s else f"- {s['name']}: ${s['amount']:.2f}/{s['frequency']}")
+            for s in sorted(subs, key=lambda x: -x.get("monthly_amount", x.get("amount", 0)))
         ) or "None detected"
 
         prompt = SAVINGS_PROMPT.format(

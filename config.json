@@ -1,4 +1,4 @@
 {
-  "llm_provider": "gemini",
+  "llm_provider": "openai",
   "default_sync_days": 90
 }

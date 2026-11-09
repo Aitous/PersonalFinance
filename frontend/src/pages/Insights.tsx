@@ -3,7 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { getInsights } from "../api/client";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import { transactionFiltersUrl } from "../api/transactionFilters";
-import { monthlyAverageRange } from "../api/reliabilityHelpers";
+import { monthlyAverageRange, monthlyAverageRangeError, readMonthlyAverageResponse } from "../api/reliabilityHelpers";
+import { useSpendingRange } from "../components/spendingRange";
 
 const SECTION = {
   background: "#fff", borderRadius: 10, padding: 24,
@@ -11,7 +12,7 @@ const SECTION = {
 };
 
 const CATEGORY_COLORS: Record<string, string> = {
-  dining: "#7c6af7", groceries: "#a78bfa", transport: "#c4b5fd",
+  dining: "#287c61", groceries: "#9bc68b", transport: "#d6a967",
   shopping: "#60a5fa", entertainment: "#34d399", subscriptions: "#f59e0b",
   health: "#f87171", travel: "#38bdf8", utilities: "#94a3b8", other: "#d1d5db",
 };
@@ -21,7 +22,7 @@ export function Insights() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [merchantDays, setMerchantDays] = useState(90);
+  const { days: merchantDays, customRange } = useSpendingRange();
   const [merchantSearch, setMerchantSearch] = useState("");
   const [avgMonths, setAvgMonths] = useState<3 | 6 | 12>(3);
   const [avgDateFrom, setAvgDateFrom] = useState("");
@@ -29,27 +30,33 @@ export function Insights() {
   const [avgData, setAvgData] = useState<any>(null);
   const [avgLoading, setAvgLoading] = useState(false);
   const [avgError, setAvgError] = useState<string | null>(null);
+  const avgRangeError = monthlyAverageRangeError(avgDateFrom, avgDateTo);
 
   useEffect(() => {
     setLoading(true);
-    getInsights(merchantDays)
+    getInsights(merchantDays, customRange ?? undefined)
       .then(setData)
       .catch((e: any) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [merchantDays]);
+  }, [merchantDays, customRange]);
 
   useEffect(() => {
+    let active = true;
+    if (avgRangeError) {
+      return () => { active = false; };
+    }
     setAvgLoading(true);
     setAvgError(null);
     const params = avgDateFrom && avgDateTo
       ? `date_from=${avgDateFrom}&date_to=${avgDateTo}`
       : `months=${avgMonths}`;
     fetch(`http://localhost:8000/analysis/monthly-averages?${params}`)
-      .then((r) => r.json())
-      .then(setAvgData)
-      .catch(() => setAvgError("Failed to load averages."))
-      .finally(() => setAvgLoading(false));
-  }, [avgMonths, avgDateFrom, avgDateTo]);
+      .then(readMonthlyAverageResponse)
+      .then((result) => { if (active) setAvgData(result); })
+      .catch(() => { if (active) { setAvgData(null); setAvgError("Failed to load averages. Please check the date range and try again."); } })
+      .finally(() => { if (active) setAvgLoading(false); });
+    return () => { active = false; };
+  }, [avgMonths, avgDateFrom, avgDateTo, avgRangeError]);
 
   if (loading) return <p>Loading insights…</p>;
   if (error) return <p style={{ color: "red" }}>Failed to load insights: {error}</p>;
@@ -63,11 +70,11 @@ export function Insights() {
   );
 
   return (
-    <div>
-      <h1 style={{ fontSize: 24, marginBottom: 24 }}>Insights</h1>
+    <div id="spending-trends" className="spending-analysis-section">
+      <h2 style={{ fontSize: 20, marginBottom: 20 }}>Trends & alerts</h2>
 
       {/* ── Alerts ── */}
-      <div style={SECTION}>
+      <div id="spending-merchants" style={SECTION}>
         <h2 style={{ margin: "0 0 16px", fontSize: 16 }}>⚡ Alerts</h2>
         {totalAlerts === 0 ? (
           <div style={{ background: "#d1fae5", borderLeft: "3px solid #10b981", padding: "10px 14px", borderRadius: 6 }}>
@@ -131,15 +138,6 @@ export function Insights() {
             placeholder="Search merchants…"
             style={{ flex: 1, padding: "7px 12px", borderRadius: 6, border: "1.5px solid #e5e7eb", fontSize: 13 }}
           />
-          <select
-            value={merchantDays}
-            onChange={(e) => setMerchantDays(Number(e.target.value))}
-            style={{ padding: "7px 10px", borderRadius: 6, border: "1px solid #ddd", fontSize: 13 }}
-          >
-            <option value={90}>Last 90 days</option>
-            <option value={180}>Last 6 months</option>
-            <option value={730}>All time</option>
-          </select>
         </div>
         <div style={{ borderRadius: 8, overflow: "hidden", border: "1px solid #f0f0f0" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
@@ -177,7 +175,7 @@ export function Insights() {
                     <td style={{ padding: "9px 16px", textAlign: "right", fontWeight: 600 }}>${m.total.toFixed(2)}</td>
                     <td style={{ padding: "9px 16px" }}>
                       <div style={{ background: "#e5e7eb", borderRadius: 3, height: 6 }}>
-                        <div style={{ width: `${barWidth}%`, background: "#7c6af7", borderRadius: 3, height: 6 }} />
+                        <div style={{ width: `${barWidth}%`, background: "#287c61", borderRadius: 3, height: 6 }} />
                       </div>
                     </td>
                   </tr>
@@ -204,7 +202,7 @@ export function Insights() {
             <Bar dataKey="total" radius={[4, 4, 0, 0]}
               label={{ position: "top", fontSize: 11, fill: "#6b7280", formatter: (v) => `$${(Number(v ?? 0) / 1000).toFixed(1)}k` }}>
               {day_of_week.days.map((d: any) => (
-                <Cell key={d.day} fill={d.day >= 5 ? "#f59e0b" : "#7c6af7"} />
+                <Cell key={d.day} fill={d.day >= 5 ? "#f59e0b" : "#287c61"} />
               ))}
             </Bar>
           </BarChart>
@@ -230,7 +228,7 @@ export function Insights() {
           return (b[lastYear] ?? 0) - (a[lastYear] ?? 0);
         }).slice(0, 8);
         const yearKeys: string[] = year_over_year.years.map((y: any) => String(y.year));
-        const YEAR_COLORS = ["#a5b4fc", "#c4b5fd", "#7c6af7"];
+        const YEAR_COLORS = ["#a5b4fc", "#d6a967", "#287c61"];
 
         return (
           <div style={SECTION}>
@@ -302,7 +300,7 @@ export function Insights() {
               onClick={() => { setAvgMonths(m); setAvgDateFrom(""); setAvgDateTo(""); }}
               style={{
                 padding: "6px 16px", borderRadius: 8, border: "1px solid #e5e7eb", cursor: "pointer", fontSize: 13,
-                background: avgMonths === m && !avgDateFrom ? "#7c6af7" : "#f3f4f6",
+                background: avgMonths === m && !avgDateFrom ? "#287c61" : "#f3f4f6",
                 color: avgMonths === m && !avgDateFrom ? "#fff" : "#374151",
               }}
             >
@@ -325,11 +323,11 @@ export function Insights() {
           />
         </div>
 
-        {avgError && <div style={{ color: "#dc2626", padding: "10px 0" }}>{avgError}</div>}
+        {(avgRangeError || avgError) && <div style={{ color: "#dc2626", padding: "10px 0" }}>{avgRangeError || avgError}</div>}
 
-        {avgLoading && <div style={{ color: "#6b7280", padding: "10px 0" }}>Loading...</div>}
+        {avgLoading && !avgRangeError && <div style={{ color: "#6b7280", padding: "10px 0" }}>Loading...</div>}
 
-        {avgData && !avgLoading && (
+        {avgData && !avgLoading && !avgRangeError && (
           <>
             {/* Total average card */}
             <div style={{ background: "#fff", borderRadius: 10, padding: "20px 24px", marginBottom: 16, border: "1px solid #e5e7eb" }}>

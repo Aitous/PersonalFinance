@@ -10,7 +10,8 @@ from datetime import datetime, timezone
 from sqlalchemy import select, update
 
 from backend.db.database import get_session, invalidate_derived_data
-from backend.db.models import EnrichmentJob, EnrichmentJobItem, Transaction
+from backend.db.models import CategoryRule, EnrichmentJob, EnrichmentJobItem, Transaction
+from backend.analysis.merchant_normalizer import active_aliases, canonical_merchant
 from backend.analysis.transaction_semantics import is_payment, purchase_amount
 
 _runner_lock = threading.RLock()
@@ -182,6 +183,8 @@ def _run_job(job_id: str, llm=None) -> None:
 
             with get_session() as session:
                 changed = False
+                rules = {rule.merchant_key: rule.category for rule in session.execute(select(CategoryRule).where(CategoryRule.enabled.is_(True))).scalars().all()}
+                aliases = active_aliases(session)
                 for tx_id, *_ in batch_data:
                     tx = session.get(Transaction, tx_id)
                     item = session.execute(select(EnrichmentJobItem).where(
@@ -220,6 +223,13 @@ def _run_job(job_id: str, llm=None) -> None:
                             if value is not None and value != "unknown":
                                 setattr(tx, field, value)
                         changed = True
+                    merchant = canonical_merchant(tx.merchant_name, aliases)
+                    key = " ".join((merchant or "").split()).casefold()
+                    if not tx.manual_category and key in rules and tx.category != rules[key]:
+                        tx.category = rules[key]
+                        changed = True
+                    if item.status in {"success", "other"}:
+                        item.status = "other" if tx.category == "other" else "success"
                     item.updated_at = datetime.now(timezone.utc)
                 job = session.get(EnrichmentJob, job_id)
                 all_items = session.execute(select(EnrichmentJobItem).where(EnrichmentJobItem.job_id == job_id)).scalars().all()
@@ -236,6 +246,11 @@ def _run_job(job_id: str, llm=None) -> None:
             job.status = "error" if failed else ("pending" if pending else "done")
             job.done = sum(i.status in {"success", "fallback", "failed", "other"} for i in items)
             job.updated_at = datetime.now(timezone.utc)
+            if job.status in {"done", "error"} and items:
+                from backend.analysis.recurring import reconcile_subscriptions
+                all_transactions = session.execute(select(Transaction)).scalars().all()
+                reconcile_subscriptions(session, all_transactions)
+                invalidate_derived_data(session)
     except Exception as exc:
         with get_session() as session:
             job = session.get(EnrichmentJob, job_id)

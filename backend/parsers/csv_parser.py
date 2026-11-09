@@ -118,10 +118,15 @@ def parse_csv_detailed(file_path: Path, source: str, account_id: Optional[str] =
     text_content = content.decode("utf-8-sig", errors="replace")
     reader = csv.DictReader(io.StringIO(text_content, newline=""))
     schema = BANK_SCHEMAS[source]
-    required = (schema["date_col"], schema["description_col"], schema["amount_col"])
     if not reader.fieldnames:
         raise ValueError("CSV is empty or has no header row")
     normalized = {h.strip(): h for h in reader.fieldnames if h}
+    discover_split_amounts = source == "discover" and all(
+        column in normalized for column in ("Transaction Date", "Debit", "Credit")
+    )
+    date_col = "Transaction Date" if discover_split_amounts else schema["date_col"]
+    required = (date_col, schema["description_col"])
+    required += ("Debit", "Credit") if discover_split_amounts else (schema["amount_col"],)
     missing = [column for column in required if column not in normalized]
     if missing:
         raise ValueError(f"Invalid {source} CSV headers; missing: {', '.join(missing)}")
@@ -139,16 +144,27 @@ def parse_csv_detailed(file_path: Path, source: str, account_id: Optional[str] =
             continue
         input_rows += 1
         try:
-            raw_date = (row.get(normalized[schema["date_col"]]) or "").strip()
+            raw_date = (row.get(normalized[date_col]) or "").strip()
             description = (row.get(normalized[schema["description_col"]]) or "").strip()
-            raw_amount_text = (row.get(normalized[schema["amount_col"]]) or "").strip().replace(",", "").replace("$", "")
             if not description:
                 raise ValueError("description is empty")
-            tx_date = datetime.strptime(raw_date, schema["date_fmt"]).date()
+            date_format = "%Y-%m-%d" if discover_split_amounts else schema["date_fmt"]
+            tx_date = datetime.strptime(raw_date, date_format).date()
+            credit = ""
+            if discover_split_amounts:
+                debit = (row.get(normalized["Debit"]) or "").strip()
+                credit = (row.get(normalized["Credit"]) or "").strip()
+                if bool(debit) == bool(credit):
+                    raise ValueError("exactly one of Debit or Credit must contain an amount")
+                raw_amount_text = (debit or credit).replace(",", "").replace("$", "")
+            else:
+                raw_amount_text = (row.get(normalized[schema["amount_col"]]) or "").strip().replace(",", "").replace("$", "")
             original_amount = Decimal(raw_amount_text)
             kind = (row.get("Type") or "").strip()
             category = (row.get("Category") or "").strip()
             amount_decimal = normalize_amount(source, original_amount)
+            if discover_split_amounts and credit:
+                amount_decimal = -amount_decimal
             amount = float(amount_decimal)
             if not original_amount.is_finite():
                 raise ValueError("amount is not finite")

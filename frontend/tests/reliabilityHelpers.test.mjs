@@ -2,10 +2,25 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   monthlyAverageRange,
+  monthlyAverageRangeError,
+  readMonthlyAverageResponse,
   previewRequestKey,
   reportPeriodRange,
   samePreviewRequest,
 } from "../src/api/reliabilityHelpers.ts";
+
+test("monthly-average custom ranges reject reversed dates before requesting data", () => {
+  assert.equal(monthlyAverageRangeError("2026-10-20", "2026-10-19"), "Start date must be on or before end date.");
+  assert.equal(monthlyAverageRangeError("2026-10-19", "2026-10-19"), null);
+  assert.equal(monthlyAverageRangeError("", "2026-10-19"), null);
+});
+
+test("monthly-average requests treat non-2xx validation responses as errors", async () => {
+  await assert.rejects(
+    readMonthlyAverageResponse({ ok: false, json: async () => ({ detail: "date_from must be before date_to" }) }),
+    /date_from must be before date_to/,
+  );
+});
 
 test("report prior-period ranges roll January back to December of the prior year", () => {
   assert.deepEqual(reportPeriodRange(2026, 1, "prior"), {

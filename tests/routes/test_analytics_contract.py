@@ -7,8 +7,8 @@ def test_data_quality_contract_and_no_coverage_claim(monkeypatch):
     from backend.routes import analysis
 
     rows = [
-        SimpleNamespace(source="Chase", date=date(2026, 1, 2), city=None, merchant_name="Cafe", account_id="a"),
-        SimpleNamespace(source="Chase", date=date(2026, 2, 3), city="Oakland", merchant_name=None, account_id=None),
+        SimpleNamespace(source="Chase", date=date(2026, 1, 2), city=None, merchant_name="Cafe", account_id="a", category="dining", enrichment_status="complete"),
+        SimpleNamespace(source="Chase", date=date(2026, 2, 3), city="Oakland", merchant_name=None, account_id=None, category=None, enrichment_status="fallback"),
     ]
 
     class Result:
@@ -36,7 +36,42 @@ def test_data_quality_contract_and_no_coverage_claim(monkeypatch):
     assert result["missing_city"] == 1
     assert result["missing_merchant"] == 1
     assert result["unassigned_account"] == 1
+    assert result["missing_category"] == 1
+    assert result["enrichment_fallback"] == 1
     assert "do not establish complete account coverage" in result["coverage_note"]
+
+
+def test_import_history_is_bounded_to_the_requested_recent_count(monkeypatch):
+    from types import SimpleNamespace
+    from backend.routes import import_csv
+
+    batches = [SimpleNamespace(
+        id=str(i), bank="chase", account_id=None, filename=f"batch-{i}.csv", checksum="hash",
+        status="imported", input_count=10, parsed_count=10, rejected_count=0,
+        duplicate_count=0, new_count=10, from_date=date(2026, 1, 1),
+        to_date=date(2026, 1, 31), created_at=None,
+    ) for i in range(5)]
+
+    class Result:
+        def __init__(self, query):
+            self.query = query
+
+        def scalars(self):
+            return self
+
+        def all(self):
+            return batches[:self.query._limit_clause.value]
+
+    class Session:
+        def execute(self, query):
+            return Result(query)
+
+    @contextmanager
+    def fake_session():
+        yield Session()
+
+    monkeypatch.setattr(import_csv, "get_session", fake_session)
+    assert len(import_csv.list_import_batches(limit=2)) == 2
 
 
 def test_search_index_status_counts_stale_rows_without_loading_model():

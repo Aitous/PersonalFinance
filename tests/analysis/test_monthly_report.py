@@ -1,6 +1,7 @@
 import pytest
 from datetime import date
 from unittest.mock import MagicMock
+from types import SimpleNamespace
 from backend.analysis.monthly_report import get_monthly_report_data
 
 
@@ -12,6 +13,20 @@ def _tx(amount, category, year, month, day=1, description="SHOP", merchant_name=
     tx.description = description
     tx.merchant_name = merchant_name
     return tx
+
+
+def _subscription(description, amount, frequency, last_charged, active=True):
+    return SimpleNamespace(
+        description=description,
+        amount=amount,
+        frequency=frequency,
+        last_charged=last_charged,
+        active=active,
+        dismissed=False,
+        user_active=None,
+        origin="legacy",
+        supporting_transaction_ids="[]",
+    )
 
 
 def test_total_and_tx_count():
@@ -102,26 +117,9 @@ def test_subscriptions_due_within_next_calendar_month():
 
     today = date(2026, 4, 30)  # last day of report month
 
-    monthly_sub = MagicMock()
-    monthly_sub.description = "Netflix"
-    monthly_sub.amount = 15.99
-    monthly_sub.frequency = "monthly"
-    monthly_sub.last_charged = date(2026, 4, 3)   # next = May 3 — within 30 days
-    monthly_sub.active = True
-
-    annual_sub = MagicMock()
-    annual_sub.description = "Adobe CC"
-    annual_sub.amount = 599.0
-    annual_sub.frequency = "annual"
-    annual_sub.last_charged = date(2025, 5, 10)   # next = 2026-05-10 — within 30 days
-    annual_sub.active = True
-
-    far_sub = MagicMock()
-    far_sub.description = "AWS"
-    far_sub.amount = 9.99
-    far_sub.frequency = "monthly"
-    far_sub.last_charged = date(2026, 3, 1)        # next = Mar 31 — already past
-    far_sub.active = True
+    monthly_sub = _subscription("Netflix", 15.99, "monthly", date(2026, 4, 3))
+    annual_sub = _subscription("Adobe CC", 599.0, "annual", date(2025, 5, 10))
+    far_sub = _subscription("AWS", 9.99, "monthly", date(2026, 3, 1))
 
     result = get_subscriptions_due([monthly_sub, annual_sub, far_sub], report_month_end=today)
     names = [r["description"] for r in result]
@@ -134,12 +132,7 @@ def test_inactive_subscriptions_excluded():
     from backend.analysis.monthly_report import get_subscriptions_due
     from datetime import date
 
-    sub = MagicMock()
-    sub.description = "Old Service"
-    sub.amount = 9.99
-    sub.frequency = "monthly"
-    sub.last_charged = date(2026, 4, 1)
-    sub.active = False
+    sub = _subscription("Old Service", 9.99, "monthly", date(2026, 4, 1), active=False)
 
     result = get_subscriptions_due([sub], report_month_end=date(2026, 4, 30))
     assert result == []
@@ -148,12 +141,7 @@ def test_inactive_subscriptions_excluded():
 def test_monthly_due_date_clamps_january_31_to_february_end():
     from backend.analysis.monthly_report import get_subscriptions_due
 
-    sub = MagicMock()
-    sub.description = "Monthly service"
-    sub.amount = 10.0
-    sub.frequency = "monthly"
-    sub.last_charged = date(2026, 1, 31)
-    sub.active = True
+    sub = _subscription("Monthly service", 10.0, "monthly", date(2026, 1, 31))
 
     result = get_subscriptions_due([sub], report_month_end=date(2026, 1, 31))
     assert result[0]["next_date"] == "2026-02-28"
@@ -162,19 +150,8 @@ def test_monthly_due_date_clamps_january_31_to_february_end():
 def test_annual_due_date_clamps_leap_day_and_stale_charge_is_not_rolled_forward():
     from backend.analysis.monthly_report import get_subscriptions_due
 
-    annual = MagicMock()
-    annual.description = "Annual service"
-    annual.amount = 100.0
-    annual.frequency = "annual"
-    annual.last_charged = date(2024, 2, 29)
-    annual.active = True
-
-    stale = MagicMock()
-    stale.description = "Stale monthly service"
-    stale.amount = 5.0
-    stale.frequency = "monthly"
-    stale.last_charged = date(2024, 3, 31)
-    stale.active = True
+    annual = _subscription("Annual service", 100.0, "annual", date(2024, 2, 29))
+    stale = _subscription("Stale monthly service", 5.0, "monthly", date(2024, 3, 31))
 
     result = get_subscriptions_due([annual, stale], report_month_end=date(2025, 1, 31))
     assert result == [{

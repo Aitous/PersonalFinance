@@ -1,0 +1,6 @@
+.recategorization-status { display: flex; align-items: center; gap: 16px; margin-bottom: 22px; padding: 13px 16px; border: 1px solid #c5ddc3; border-radius: 12px; background: #edf6e9; color: #28563c; }
+.recategorization-status.is-error { border-color: #f2b9b9; background: #fff1f1; color: #9c2633; }
+.recategorization-status-text { display: flex; flex: 1; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; font-size: 13px; }
+.recategorization-status progress { width: min(190px, 25%); accent-color: #287c61; }
+.recategorization-status button { background: transparent; border: 0; color: inherit; cursor: pointer; text-decoration: underline; }
+@media (max-width: 600px) { .recategorization-status { align-items: flex-start; flex-wrap: wrap; } .recategorization-status-text { flex-basis: 100%; } .recategorization-status progress { width: 100%; } }

@@ -39,3 +39,16 @@ export function monthlyAverageRange(category: string, dateFrom?: string, dateTo?
 } {
   return { category, ...(dateFrom ? { date_from: dateFrom } : {}), ...(dateTo ? { date_to: dateTo } : {}) };
 }
+
+export function monthlyAverageRangeError(dateFrom: string, dateTo: string): string | null {
+  if (dateFrom && dateTo && dateFrom > dateTo) return "Start date must be on or before end date.";
+  return null;
+}
+
+export async function readMonthlyAverageResponse(response: Pick<Response, "ok" | "json">): Promise<unknown> {
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as { detail?: unknown } | null;
+    throw new Error(typeof body?.detail === "string" ? body.detail : "Failed to load averages.");
+  }
+  return response.json();
+}

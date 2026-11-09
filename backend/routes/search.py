@@ -1,9 +1,10 @@
 import json
+import os
 import threading
 from typing import List, Optional
 
 import numpy as np
-from fastapi import APIRouter, BackgroundTasks, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends, Query
 from sqlalchemy import select, or_
 
 from backend.db.database import get_session
@@ -16,8 +17,15 @@ router = APIRouter()
 
 SEMANTIC_THRESHOLD = 0.35   # minimum cosine similarity to include a result
 KEYWORD_SCORE = 1.0          # keyword matches always score 1.0
-TOP_K = 50
+DEFAULT_PAGE_SIZE = 50
+MAX_PAGE_SIZE = 500
 _embed_lock = threading.Lock()
+
+
+def _semantic_search_enabled() -> bool:
+    return os.getenv("ENABLE_LOCAL_EMBEDDINGS", "true").strip().lower() not in {
+        "0", "false", "no", "off",
+    }
 
 
 def _index_status(txs, aliases=None):
@@ -37,18 +45,21 @@ def search_index_status():
     with get_session() as session:
         txs = session.execute(select(Transaction)).scalars().all()
         aliases = active_aliases(session)
-        return _index_status(txs, aliases)
+        return {**_index_status(txs, aliases), "semantic_search_available": _semantic_search_enabled()}
 
 
 @router.get("/search")
 def search_transactions(
     q: str,
     mode: str = "hybrid",  # "keyword" | "semantic" | "hybrid"
+    limit: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
+    offset: int = Query(0, ge=0),
     query=Depends(transaction_query),
 ):
     q = q.strip()
     if not q:
-        return {"results": [], "mode": mode}
+        return {"results": [], "mode": mode, "total_results": 0,
+                "semantic_search_available": _semantic_search_enabled()}
 
     with get_session() as session:
         all_txs = session.execute(query).scalars().all()
@@ -69,7 +80,8 @@ def search_transactions(
             }
 
         semantic_scores: dict = {}
-        if mode in ("semantic", "hybrid"):
+        semantic_search_available = _semantic_search_enabled()
+        if mode in ("semantic", "hybrid") and semantic_search_available:
             # Only embed transactions that have embeddings stored
             embedded = [tx for tx in all_txs if embedding_is_current(tx, aliases)]
             if embedded:
@@ -88,10 +100,20 @@ def search_transactions(
             scored[tid] = max(scored.get(tid, 0.0), score)
 
         if not scored:
-            return {"results": [], "mode": mode, **_index_status(all_txs, aliases)}
+            return {
+                "results": [],
+                "mode": "keyword" if mode in ("semantic", "hybrid") and not semantic_search_available else mode,
+                "total_results": 0,
+                "semantic_search_available": semantic_search_available,
+                **_index_status(all_txs, aliases),
+            }
 
         tx_map = {tx.id: tx for tx in all_txs}
-        results = sorted(scored.items(), key=lambda x: -x[1])[:TOP_K]
+        ranked = sorted(
+            scored.items(),
+            key=lambda item: (-item[1], -tx_map[item[0]].date.toordinal(), item[0]),
+        )
+        results = ranked[offset:offset + limit]
 
         return {
             "results": [
@@ -115,7 +137,9 @@ def search_transactions(
                 for tid, score in results
                 if tid in tx_map
             ],
-            "mode": mode,
+            "mode": "keyword" if mode in ("semantic", "hybrid") and not semantic_search_available else mode,
+            "semantic_search_available": semantic_search_available,
+            "total_results": len(ranked),
             **_index_status(all_txs, aliases),
         }
 

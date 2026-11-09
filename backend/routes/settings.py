@@ -1,7 +1,9 @@
 import json
 from pathlib import Path
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+import os
+from backend.auth import hosted_auth_enabled
 from backend.credentials import credentials_store
 
 router = APIRouter()
@@ -18,12 +20,16 @@ class LLMConfig(BaseModel):
 
 @router.post("/settings/bank-credentials")
 def save_bank_credentials(cred: BankCredential):
+    if hosted_auth_enabled():
+        raise HTTPException(status_code=404, detail="Bank credential sync is unavailable in hosted accounts; connect with Plaid")
     credentials_store.save_bank_credential(cred.bank, "username", cred.username)
     credentials_store.save_bank_credential(cred.bank, "password", cred.password)
     return {"status": "saved", "bank": cred.bank}
 
 @router.get("/settings/banks")
 def get_configured_banks():
+    if hosted_auth_enabled():
+        return {bank: False for bank in ["chase", "discover", "amex"]}
     banks = ["chase", "discover", "amex"]
     return {
         bank: credentials_store.get_bank_credential(bank, "username") is not None
@@ -37,11 +43,19 @@ def _read_config() -> dict:
 
 @router.get("/settings/llm")
 def get_llm_config():
+    if hosted_auth_enabled():
+        return {"provider": os.getenv("LLM_PROVIDER", "managed"), "managed": True}
     cfg = _read_config()
     return {"provider": cfg.get("llm_provider", "claude")}
 
 @router.post("/settings/llm")
 def save_llm_config(config: LLMConfig):
+    if hosted_auth_enabled():
+        raise HTTPException(status_code=404, detail="AI provider credentials are managed by the service")
+    if config.provider not in {"claude", "gemini", "openai"}:
+        raise HTTPException(status_code=400, detail="Unknown LLM provider")
+    if not config.api_key.strip():
+        raise HTTPException(status_code=400, detail="API key is required to change providers")
     credentials_store.save_llm_key(config.provider, config.api_key)
     cfg = _read_config()
     cfg["llm_provider"] = config.provider

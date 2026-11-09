@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from backend.db.models import Account, Subscription, Sync, Transaction
 from backend.db.database import invalidate_derived_data
-from backend.ingestion import reconcile_account_overlaps, reconcile_legacy_csv_ids
+from backend.ingestion import reconcile_account_overlaps, reconcile_legacy_csv_ids, reconcile_unassigned_description_overlaps, namespace_transaction_ids
 from backend.ofx.client import download_transactions
 from backend.analysis.categorizer import Categorizer
 from backend.analysis.subscription_detector import SubscriptionDetector
@@ -58,8 +58,10 @@ class SyncService:
                 tx.id = stable_transaction_id(bank, tx.date, tx.description, tx.amount, account.id,
                     occurrences[occurrence_key], tx.bank_fitid)
 
+        namespace_transaction_ids(transactions)
         reconcile_account_overlaps(self._session, transactions)
         reconcile_legacy_csv_ids(self._session, transactions)
+        reconcile_unassigned_description_overlaps(self._session, transactions)
         reconcile_legacy_csv_ids(self._session, transactions)
 
         new_txs = []
@@ -97,6 +99,8 @@ class SyncService:
         """Import pre-parsed transactions (e.g. from CSV files), running full pipeline."""
         if not transactions:
             return {"tx_count": 0, "total_parsed": 0, "duplicate_count": 0, "new_transaction_ids": []}
+
+        namespace_transaction_ids(transactions)
 
         reconcile_account_overlaps(self._session, transactions)
         reconcile_legacy_csv_ids(self._session, transactions)

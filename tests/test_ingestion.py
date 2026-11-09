@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from backend.db.database import initialize_schema, get_data_revision, invalidate_derived_data
 from backend.db.models import Account, Base, ImportBatch, ImportedRow, Transaction
-from backend.ingestion import reconcile_account_overlaps, reconcile_legacy_csv_ids
+from backend.ingestion import reconcile_account_overlaps, reconcile_legacy_csv_ids, reconcile_unassigned_description_overlaps
 from backend.parsers.csv_parser import parse_csv, parse_csv_detailed, _make_id
 
 
@@ -77,6 +77,27 @@ def test_account_overlap_reconciles_occurrences_without_guessing_legacy_rows():
         assert incoming[0].id == "existing-1"
         assert incoming[1].id == "csv-row-2"
         assert remapped == {"csv-row-1": "existing-1"}
+    engine.dispose()
+
+
+def test_unassigned_overlap_matches_truncated_bank_descriptions_once():
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        session.add(Transaction(id="old", source="discover", date=date(2026, 5, 16),
+            description="GOOGLE *GOOGLE ONE G.CO/HELPPAY#CAP1LCZNLG", amount=1.99))
+        session.flush()
+        incoming = [
+            Transaction(id="new-1", source="discover", date=date(2026, 5, 16),
+                description="GOOGLE *GOOGLE ONE", amount=1.99),
+            Transaction(id="new-2", source="discover", date=date(2026, 5, 16),
+                description="GOOGLE *GOOGLE ONE", amount=1.99),
+        ]
+
+        remapped = reconcile_unassigned_description_overlaps(session, incoming)
+
+        assert remapped == {"new-1": "old"}
+        assert [tx.id for tx in incoming] == ["old", "new-2"]
     engine.dispose()
 
 

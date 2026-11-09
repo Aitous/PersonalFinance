@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from backend.credentials import credentials_store
 from backend.db.database import get_session
 from backend.sync_service import SyncService
+from backend.auth import hosted_auth_enabled
 
 router = APIRouter()
 
@@ -17,6 +18,8 @@ class SyncRequest(BaseModel):
 
 @router.post("/sync")
 def trigger_sync(req: SyncRequest, background_tasks: BackgroundTasks):
+    if hosted_auth_enabled():
+        raise HTTPException(status_code=404, detail="Use a linked Plaid account in hosted mode")
     username = credentials_store.get_bank_credential(req.bank, "username")
     password = credentials_store.get_bank_credential(req.bank, "password")
     if not username or not password:

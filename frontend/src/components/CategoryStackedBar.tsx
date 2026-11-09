@@ -2,8 +2,8 @@ import { useNavigate } from "react-router-dom";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer } from "recharts";
 
 const CATEGORY_COLORS: Record<string, string> = {
-  dining: "#7c6af7",
-  groceries: "#a78bfa",
+  dining: "#287c61",
+  groceries: "#9bc68b",
   transport: "#60a5fa",
   shopping: "#34d399",
   entertainment: "#f59e0b",

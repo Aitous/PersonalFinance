@@ -18,8 +18,8 @@ export function SpendingLineChart({ data }: Props) {
           formatter={(v) => typeof v === "number" ? [`$${v.toFixed(2)}`, "Spent"] : v}
           labelStyle={{ color: "#a5b4fc", marginBottom: 4 }}
         />
-        <ReferenceLine y={avg} stroke="#7c6af7" strokeDasharray="6 3" strokeOpacity={0.5} label={{ value: `avg $${avg.toFixed(0)}`, fill: "#7c6af7", fontSize: 11 }} />
-        <Line type="monotone" dataKey="total" stroke="#7c6af7" strokeWidth={2.5} dot={{ r: 4, fill: "#7c6af7", strokeWidth: 0 }} activeDot={{ r: 6, fill: "#a78bfa" }} />
+        <ReferenceLine y={avg} stroke="#287c61" strokeDasharray="6 3" strokeOpacity={0.5} label={{ value: `avg $${avg.toFixed(0)}`, fill: "#287c61", fontSize: 11 }} />
+        <Line type="monotone" dataKey="total" stroke="#287c61" strokeWidth={2.5} dot={{ r: 4, fill: "#287c61", strokeWidth: 0 }} activeDot={{ r: 6, fill: "#9bc68b" }} />
       </LineChart>
     </ResponsiveContainer>
   );

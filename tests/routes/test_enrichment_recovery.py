@@ -13,6 +13,65 @@ from backend.analysis.categorizer import TransactionEnrichment
 from backend.jobs.enrichment import create_job, run_job
 
 
+def test_status_can_select_recategorization_when_another_job_is_newer():
+    from datetime import datetime, timedelta, timezone
+    engine = create_engine('sqlite://', connect_args={'check_same_thread': False}, poolclass=StaticPool)
+    Base.metadata.create_all(engine)
+
+    @contextmanager
+    def session_scope():
+        with Session(engine) as session:
+            yield session
+            session.commit()
+
+    now = datetime.now(timezone.utc)
+    with session_scope() as session:
+        session.add_all([
+            EnrichmentJob(id='recategorize-job', mode='recategorize', status='running', total=10, done=4, created_at=now),
+            EnrichmentJob(id='enrich-job', mode='enrich', status='done', total=2, done=2, created_at=now + timedelta(seconds=1)),
+        ])
+    with patch('backend.routes.import_csv.get_session', session_scope):
+        client = TestClient(app)
+        response = client.get('/import/enrich/status', params={'mode': 'recategorize'})
+        assert response.status_code == 200
+        assert response.json()['id'] == 'recategorize-job'
+        assert response.json()['done'] == 4
+        assert client.get('/import/enrich/status').json()['id'] == 'enrich-job'
+    engine.dispose()
+
+
+def test_merchant_rule_applies_during_recategorization_without_overriding_manual_category():
+    from backend.db.models import CategoryRule
+    engine = create_engine('sqlite://', connect_args={'check_same_thread': False}, poolclass=StaticPool)
+    Base.metadata.create_all(engine)
+
+    @contextmanager
+    def session_scope():
+        with Session(engine) as session:
+            yield session
+            session.commit()
+
+    with session_scope() as session:
+        session.add(CategoryRule(merchant_key='trader joe\'s', merchant="Trader Joe's", category='groceries', enabled=True))
+        session.add_all([Transaction(id=key, source='chase', date=date(2026, 1, 1), description='RAW', amount=10,
+                                    merchant_name="Trader Joe's", category='other', manual_category=manual)
+                         for key, manual in [('auto', False), ('manual', True)]])
+
+    class Provider:
+        MODEL = 'test'
+
+    def enrich(batch):
+        return {tx.id: TransactionEnrichment(id=tx.id, category='shopping', merchant_name="Trader Joe's", is_online=False, merchant_type='store') for tx in batch}
+
+    with patch('backend.jobs.enrichment.get_session', session_scope), patch('backend.analysis.categorizer.Categorizer._enrich_batch', side_effect=enrich):
+        job_id, _ = create_job('recategorize')
+        run_job(job_id, llm=Provider())
+    with session_scope() as session:
+        assert session.get(Transaction, 'auto').category == 'groceries'
+        assert session.get(Transaction, 'manual').category == 'other'
+    engine.dispose()
+
+
 def test_retry_recovers_fallbacks_without_changing_valid_categories():
     engine = create_engine('sqlite://', connect_args={'check_same_thread': False},
                            poolclass=StaticPool)

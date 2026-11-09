@@ -1,11 +1,15 @@
 import shutil
 import hashlib
+import hmac
+import os
+import stat
 import tempfile
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, BackgroundTasks, HTTPException, UploadFile, File, Form, Query
 from pydantic import BaseModel
 
 from sqlalchemy import select, or_
@@ -13,12 +17,15 @@ from backend.db.database import get_session
 from backend.db.models import Transaction, Account, ImportBatch, ImportedRow
 from backend.parsers.csv_parser import parse_csv_detailed, BANK_SCHEMAS
 from backend.sync_service import SyncService
-from backend.ingestion import reconcile_account_overlaps, reconcile_legacy_csv_ids
+from backend.ingestion import reconcile_account_overlaps, reconcile_legacy_csv_ids, reconcile_unassigned_description_overlaps, namespace_transaction_ids
+from backend.auth import hosted_auth_enabled
 
 router = APIRouter()
 
 TRANSACTIONS_DIR = Path(__file__).parent.parent.parent / "transactions"
+INBOX_DIR = TRANSACTIONS_DIR / "inbox"
 PROCESSED_DIR = TRANSACTIONS_DIR / "processed"
+MAX_INBOX_FILE_BYTES = 25 * 1024 * 1024
 
 FILENAME_HINTS = {
     "chase": ["chase"],
@@ -40,6 +47,144 @@ class FolderImportResult(BaseModel):
     files_skipped: int
     total_new_transactions: int
     details: list[dict]
+
+
+class InboxFileRequest(BaseModel):
+    filename: str
+    bank: Optional[str] = None
+    account_id: Optional[str] = None
+
+
+class InboxConfirmRequest(InboxFileRequest):
+    checksum: str
+
+
+def _inbox_file(filename: str) -> Path:
+    if (not filename or filename in {".", ".."} or Path(filename).name != filename
+            or "/" in filename or "\\" in filename or Path(filename).suffix.casefold() != ".csv"):
+        raise HTTPException(status_code=422, detail="Choose a CSV file directly inside the import inbox.")
+    INBOX_DIR.mkdir(parents=True, exist_ok=True)
+    if INBOX_DIR.is_symlink():
+        raise HTTPException(status_code=422, detail="The import inbox cannot be a symbolic link.")
+    path = INBOX_DIR / filename
+    if path.is_symlink() or not path.is_file():
+        raise HTTPException(status_code=404, detail="That CSV is no longer in the import inbox.")
+    try:
+        resolved = path.resolve(strict=True)
+        if resolved.parent != INBOX_DIR.resolve(strict=True):
+            raise HTTPException(status_code=422, detail="Inbox files must be stored directly in the import inbox.")
+        if path.stat().st_size > MAX_INBOX_FILE_BYTES:
+            raise HTTPException(status_code=413, detail="CSV files in the import inbox must be 25 MiB or smaller.")
+    except OSError as exc:
+        raise HTTPException(status_code=404, detail="Could not read that CSV from the import inbox.") from exc
+    return path
+
+
+def _read_inbox_file(filename: str) -> tuple[Path, bytes, str]:
+    path = _inbox_file(filename)
+    try:
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+        descriptor = os.open(path, flags)
+        with os.fdopen(descriptor, "rb") as stream:
+            file_stat = os.fstat(stream.fileno())
+            if not stat.S_ISREG(file_stat.st_mode):
+                raise HTTPException(status_code=422, detail="Inbox entries must be regular CSV files.")
+            if file_stat.st_size > MAX_INBOX_FILE_BYTES:
+                raise HTTPException(status_code=413, detail="CSV files in the import inbox must be 25 MiB or smaller.")
+            content = stream.read(MAX_INBOX_FILE_BYTES + 1)
+    except OSError as exc:
+        raise HTTPException(status_code=404, detail="Could not read that CSV from the import inbox.") from exc
+    if len(content) > MAX_INBOX_FILE_BYTES:
+        raise HTTPException(status_code=413, detail="CSV files in the import inbox must be 25 MiB or smaller.")
+    return path, content, hashlib.sha256(content).hexdigest()
+
+
+def _archive_snapshot(source_name: str, checksum: str, content: bytes) -> Path:
+    PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
+    base = Path(source_name).name
+    stem = Path(base).stem or "statement"
+    suffix = Path(base).suffix.casefold() or ".csv"
+    candidates = [base, f"{stem}_{checksum[:8]}{suffix}"]
+    candidates.extend(f"{stem}_{uuid.uuid4().hex[:10]}{suffix}" for _ in range(5))
+    for name in candidates:
+        target = PROCESSED_DIR / name
+        try:
+            descriptor = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        except FileExistsError:
+            continue
+        try:
+            with os.fdopen(descriptor, "wb") as stream:
+                stream.write(content)
+                stream.flush()
+                os.fsync(stream.fileno())
+        except Exception:
+            try:
+                target.unlink()
+            except OSError:
+                pass
+            raise
+        return target
+    raise OSError("Could not reserve a unique archive filename.")
+
+
+def _commit_import(background_tasks: BackgroundTasks, bank: str, account_id: Optional[str], filename: str,
+                   parsed, summary: dict, ambiguous_ids: set, archive_path: Path,
+                   archive_content: bytes, retain_source: bool):
+    if not parsed.transactions:
+        raise HTTPException(status_code=422, detail="No valid transactions were found in this CSV.")
+    archived_path = _archive_snapshot(archive_path.name, parsed.checksum, archive_content) if retain_source else None
+    batch_id = str(uuid.uuid4())
+    enrichment_job_id = None
+    try:
+        with get_session() as session:
+            namespace_transaction_ids(parsed.transactions)
+            duplicate_ids = {tx.id for tx in parsed.transactions if session.get(Transaction, tx.id) is not None}
+            service = SyncService(session=session, llm=None)
+            result = service.import_transactions(parsed.transactions, run_enrichment=False, commit=False)
+            if result["new_transaction_ids"]:
+                from backend.jobs.enrichment import enqueue_transactions
+                enrichment_job_id = enqueue_transactions(session, result["new_transaction_ids"])
+            batch = ImportBatch(
+                id=batch_id, bank=bank, account_id=account_id, filename=filename,
+                checksum=parsed.checksum, status="partial" if parsed.errors else "imported", input_count=parsed.input_rows,
+                parsed_count=parsed.parsed_rows, rejected_count=len(parsed.errors),
+                duplicate_count=result.get("duplicate_count", 0), new_count=result["tx_count"],
+                from_date=min(t.date for t in parsed.transactions), to_date=max(t.date for t in parsed.transactions),
+            )
+            session.add(batch)
+            for tx in parsed.transactions:
+                duplicate = tx.id in duplicate_ids
+                session.add(ImportedRow(batch_id=batch_id, transaction_id=tx.id,
+                    row_number=getattr(tx, "_import_row_number", 0),
+                    row_hash=hashlib.sha256((tx.raw_csv_row or "").encode()).hexdigest(), raw_data=tx.raw_csv_row,
+                    reason="duplicate" if duplicate else ("possible ambiguous legacy account match" if tx.id in ambiguous_ids else None),
+                    status="duplicate" if duplicate else "accepted"))
+            for error in parsed.errors:
+                session.add(ImportedRow(batch_id=batch_id, transaction_id=None, row_number=error["row_number"],
+                    row_hash=hashlib.sha256(error.get("raw_data", "").encode()).hexdigest(),
+                    raw_data=error.get("raw_data"), status="rejected", reason=error["reason"]))
+    except Exception:
+        for path in (archived_path, None if retain_source else archive_path):
+            if path is not None:
+                try:
+                    path.unlink()
+                except OSError:
+                    pass
+        raise
+
+    if not retain_source:
+        try:
+            archive_path.unlink()
+        except OSError:
+            pass
+    if enrichment_job_id:
+        from backend.jobs.enrichment import run_job
+        background_tasks.add_task(run_job, enrichment_job_id)
+    from backend.routes.search import _embed_all
+    background_tasks.add_task(_embed_all, get_session)
+    return {**summary, "tx_count": result["tx_count"], "total_parsed": parsed.parsed_rows,
+            "new_transactions": result["tx_count"], "duplicate_rows": result.get("duplicate_count", 0),
+            "batch_id": batch_id, "enrichment_job_id": enrichment_job_id}
 
 
 @router.get("/accounts")
@@ -75,9 +220,11 @@ def create_account(payload: AccountCreate):
 
 
 @router.get("/import/batches")
-def list_import_batches():
+def list_import_batches(limit: int = Query(10, ge=1, le=50)):
     with get_session() as session:
-        batches = session.execute(select(ImportBatch).order_by(ImportBatch.created_at.desc())).scalars().all()
+        batches = session.execute(
+            select(ImportBatch).order_by(ImportBatch.created_at.desc()).limit(limit)
+        ).scalars().all()
         return [{"id": b.id, "bank": b.bank, "account_id": b.account_id, "filename": b.filename,
             "checksum": b.checksum, "status": b.status, "input_rows": b.input_count,
             "parsed_rows": b.parsed_count, "rejected_rows": b.rejected_count,
@@ -99,6 +246,7 @@ def _preview_payload(bank: str, account_id: Optional[str], filename: str, conten
             parsed = parse_csv_detailed(Path(temp.name), bank, account_id)
         reconcile_account_overlaps(session, parsed.transactions)
         reconcile_legacy_csv_ids(session, parsed.transactions)
+        reconcile_unassigned_description_overlaps(session, parsed.transactions)
         duplicates = sum(1 for tx in parsed.transactions if session.get(Transaction, tx.id) is not None)
         ambiguous_ids = set()
         if account_id:
@@ -133,9 +281,93 @@ async def preview_csv(bank: str = Form(...), account_id: Optional[str] = Form(No
         raise HTTPException(status_code=422, detail=str(exc))
 
 
+@router.get("/import/inbox")
+def list_import_inbox():
+    if hosted_auth_enabled():
+        raise HTTPException(status_code=404, detail="The local filesystem inbox is unavailable in hosted accounts; upload a file directly")
+    INBOX_DIR.mkdir(parents=True, exist_ok=True)
+    if INBOX_DIR.is_symlink():
+        raise HTTPException(status_code=422, detail="The import inbox cannot be a symbolic link.")
+    with get_session() as session:
+        imported_checksums = set(session.execute(select(ImportBatch.checksum)).scalars().all())
+    files = []
+    for path in sorted(INBOX_DIR.iterdir(), key=lambda item: item.name.casefold()):
+        if path.suffix.casefold() != ".csv" or path.is_symlink() or not path.is_file():
+            continue
+        try:
+            file_stat = path.stat()
+        except OSError:
+            continue
+        checksum = None
+        if file_stat.st_size <= MAX_INBOX_FILE_BYTES:
+            try:
+                _, _, checksum = _read_inbox_file(path.name)
+            except HTTPException:
+                continue
+        files.append({
+            "filename": path.name,
+            "bank_guess": _detect_bank(path.name),
+            "size_bytes": file_stat.st_size,
+            "modified_at": datetime.fromtimestamp(file_stat.st_mtime, timezone.utc).isoformat(),
+            "too_large": file_stat.st_size > MAX_INBOX_FILE_BYTES,
+            "already_imported": checksum in imported_checksums if checksum else False,
+        })
+    return {"folder": "transactions/inbox", "files": files}
+
+
+@router.post("/import/inbox/preview")
+def preview_import_inbox_file(payload: InboxFileRequest):
+    if hosted_auth_enabled():
+        raise HTTPException(status_code=404, detail="The local filesystem inbox is unavailable in hosted accounts; upload a file directly")
+    path, content, checksum = _read_inbox_file(payload.filename)
+    bank = (payload.bank or _detect_bank(path.name) or "").casefold().strip()
+    if bank not in BANK_SCHEMAS:
+        raise HTTPException(status_code=422, detail="Choose Chase, Amex, or Discover for this file.")
+    try:
+        parsed, summary, _ = _preview_payload(bank, payload.account_id, path.name, content)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=f"Could not preview this CSV: {exc}") from exc
+    return {
+        **summary,
+        "filename": path.name,
+        "checksum": checksum,
+        "sample_transactions": [
+            {"date": tx.date.isoformat(), "description": tx.description, "amount": tx.amount,
+             "category": tx.category or "other"}
+            for tx in parsed.transactions[:8]
+        ],
+    }
+
+
+@router.post("/import/inbox/confirm")
+def confirm_import_inbox_file(payload: InboxConfirmRequest, background_tasks: BackgroundTasks):
+    if hosted_auth_enabled():
+        raise HTTPException(status_code=404, detail="The local filesystem inbox is unavailable in hosted accounts; upload a file directly")
+    path, content, checksum = _read_inbox_file(payload.filename)
+    if not hmac.compare_digest(checksum, payload.checksum):
+        raise HTTPException(status_code=409, detail="This file changed after preview. Review the updated file before importing.")
+    bank = (payload.bank or _detect_bank(path.name) or "").casefold().strip()
+    if bank not in BANK_SCHEMAS:
+        raise HTTPException(status_code=422, detail="Choose Chase, Amex, or Discover for this file.")
+    try:
+        parsed, summary, ambiguous_ids = _preview_payload(bank, payload.account_id, path.name, content)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=f"Could not import this CSV: {exc}") from exc
+    if summary["new_transactions"] <= 0:
+        raise HTTPException(status_code=409, detail="This file contains no new transactions to import.")
+    return _commit_import(background_tasks, bank, payload.account_id, path.name,
+                          parsed, summary, ambiguous_ids, path, content, retain_source=True)
+
+
 @router.post("/import/folder", response_model=FolderImportResult)
 def import_from_folder(background_tasks: BackgroundTasks):
     """Scan the transactions/ folder, parse all CSVs, and import into the database."""
+    if hosted_auth_enabled():
+        raise HTTPException(status_code=404, detail="Server-folder import is available only in local mode")
     if not TRANSACTIONS_DIR.exists():
         raise HTTPException(status_code=404, detail="transactions/ folder not found")
 
@@ -232,45 +464,8 @@ async def upload_csv(background_tasks: BackgroundTasks, bank: str = Form(...), a
     TRANSACTIONS_DIR.mkdir(exist_ok=True)
     dest = TRANSACTIONS_DIR / f"{bank}_{uuid.uuid4().hex}.csv"
     dest.write_bytes(content)
-    batch_id = str(uuid.uuid4())
-    enrichment_job_id = None
-    with get_session() as session:
-        duplicate_ids = {tx.id for tx in parsed.transactions if session.get(Transaction, tx.id) is not None}
-        service = SyncService(session=session, llm=None)
-        result = service.import_transactions(parsed.transactions, run_enrichment=False, commit=False)
-        if result["new_transaction_ids"]:
-            from backend.jobs.enrichment import enqueue_transactions
-            enrichment_job_id = enqueue_transactions(session, result["new_transaction_ids"])
-        batch = ImportBatch(
-            id=batch_id, bank=bank, account_id=account_id, filename=file.filename or "upload.csv",
-            checksum=parsed.checksum, status="partial" if parsed.errors else "imported", input_count=parsed.input_rows,
-            parsed_count=parsed.parsed_rows, rejected_count=len(parsed.errors),
-            duplicate_count=result.get("duplicate_count", 0), new_count=result["tx_count"],
-            from_date=min(t.date for t in parsed.transactions), to_date=max(t.date for t in parsed.transactions),
-        )
-        session.add(batch)
-        for tx in parsed.transactions:
-            duplicate = tx.id in duplicate_ids
-            session.add(ImportedRow(batch_id=batch_id, transaction_id=tx.id, row_number=getattr(tx, "_import_row_number", 0),
-                row_hash=hashlib.sha256((tx.raw_csv_row or "").encode()).hexdigest(),
-                raw_data=tx.raw_csv_row,
-                reason="duplicate" if duplicate else ("possible ambiguous legacy account match" if tx.id in ambiguous_ids else None),
-                status="duplicate" if duplicate else "accepted"))
-        for error in parsed.errors:
-            session.add(ImportedRow(batch_id=batch_id, transaction_id=None, row_number=error["row_number"],
-                row_hash=hashlib.sha256(error.get("raw_data", "").encode()).hexdigest(),
-                raw_data=error.get("raw_data"), status="rejected", reason=error["reason"]))
-
-    PROCESSED_DIR.mkdir(exist_ok=True)
-    shutil.move(str(dest), str(PROCESSED_DIR / dest.name))
-    if enrichment_job_id:
-        from backend.jobs.enrichment import run_job
-        background_tasks.add_task(run_job, enrichment_job_id)
-    from backend.routes.search import _embed_all
-    background_tasks.add_task(_embed_all, get_session)
-    return {**summary, "tx_count": result["tx_count"], "total_parsed": parsed.parsed_rows,
-            "new_transactions": result["tx_count"], "duplicate_rows": result.get("duplicate_count", 0),
-            "batch_id": batch_id, "enrichment_job_id": enrichment_job_id}
+    return _commit_import(background_tasks, bank, account_id, file.filename or "upload.csv",
+                          parsed, summary, ambiguous_ids, dest, content, retain_source=False)
 
 
 import logging as _logging
@@ -281,11 +476,14 @@ _enrich_logger = _logging.getLogger(__name__)
 
 
 @router.get("/import/enrich/status")
-def enrich_status():
+def enrich_status(mode: Optional[str] = Query(default=None, pattern="^(enrich|recategorize)$")):
     from backend.db.models import EnrichmentJob
     from backend.jobs.enrichment import job_payload
     with get_session() as session:
-        job = session.execute(select(EnrichmentJob).order_by(EnrichmentJob.created_at.desc())).scalars().first()
+        query = select(EnrichmentJob)
+        if mode:
+            query = query.where(EnrichmentJob.mode == mode)
+        job = session.execute(query.order_by(EnrichmentJob.created_at.desc())).scalars().first()
         if not job:
             return {"status": "idle", "total": 0, "done": 0, "remaining": 0, "error": None}
         payload = job_payload(session, job)

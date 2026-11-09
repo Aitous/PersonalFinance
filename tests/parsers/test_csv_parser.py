@@ -20,6 +20,40 @@ def test_parse_discover_csv():
     assert expenses[0].description == "UBER EATS"
     assert expenses[0].amount == 32.50
 
+
+def test_parse_discover_transaction_download_with_debit_and_credit_columns(tmp_path):
+    path = tmp_path / "discover-download.csv"
+    path.write_text(
+        "Transaction Date,Posted Date,Card No.,Description,Category,Debit,Credit\n"
+        "2026-10-09,2026-10-11,2743,ANTHROPIC* CLAUDE SUB,Merchandise,20.00,\n"
+        "2026-10-12,2026-10-13,2743,DISCOVER PAYMENT,Payment,,125.00\n"
+    )
+
+    parsed = parse_csv_detailed(path, "discover")
+
+    assert parsed.input_rows == 2
+    assert parsed.parsed_rows == 2
+    purchase, payment = parsed.transactions
+    assert purchase.date.isoformat() == "2026-10-09"
+    assert purchase.amount == 20.00
+    assert purchase.kind == "purchase"
+    assert payment.amount == -125.00
+    assert payment.kind == "payment"
+
+
+def test_parse_discover_download_rejects_rows_with_both_debit_and_credit(tmp_path):
+    path = tmp_path / "discover-download.csv"
+    path.write_text(
+        "Transaction Date,Posted Date,Card No.,Description,Category,Debit,Credit\n"
+        "2026-10-08,2026-10-09,2743,VALID,Merchandise,2.00,\n"
+        "2026-10-09,2026-10-11,2743,INVALID,Merchandise,20.00,1.00\n"
+    )
+
+    parsed = parse_csv_detailed(path, "discover")
+
+    assert parsed.parsed_rows == 1
+    assert parsed.errors[0]["reason"] == "exactly one of Debit or Credit must contain an amount"
+
 def test_parse_amex_csv():
     txs = parse_csv(FIXTURES / "amex_sample.csv", source="amex")
     assert len(txs) == 2

@@ -53,6 +53,23 @@ def test_search_filters_before_result_limit(client):
     assert [t['id'] for t in r.json()['results']] == ['59']
 
 
+def test_search_paginates_ranked_matches_and_reports_total(client):
+    first = client.get('/search', params=dict(q='coffee', mode='keyword', limit=20, offset=0)).json()
+    second = client.get('/search', params=dict(q='coffee', mode='keyword', limit=20, offset=20)).json()
+
+    assert first['total_results'] == 60
+    assert second['total_results'] == 60
+    assert len(first['results']) == len(second['results']) == 20
+    assert set(row['id'] for row in first['results']).isdisjoint(row['id'] for row in second['results'])
+    assert first['results'][0]['id'] == '0'
+
+
+def test_search_pagination_validates_limit(client):
+    assert client.get('/search', params=dict(q='coffee', limit=0)).status_code == 422
+    assert client.get('/search', params=dict(q='coffee', limit=501)).status_code == 422
+    assert client.get('/search', params=dict(q='coffee', offset=-1)).status_code == 422
+
+
 def test_ids_can_be_combined_with_filters(client):
     r = client.get('/transactions', params=dict(ids='1,59', source='chase'))
     assert [t['id'] for t in r.json()] == ['59']
