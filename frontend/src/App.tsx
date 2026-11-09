@@ -11,7 +11,7 @@ import { RecategorizationProvider } from "./components/RecategorizationStatus";
 import { SectionLayout } from "./components/SectionLayout";
 import { SpendingAnalysis } from "./pages/SpendingAnalysis";
 import { AuthProvider, hostedMode, SignInScreen, useAuth } from "./auth";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { acceptAIConsent, deleteAccount, getAccountDeletionStatus, getAIConsent } from "./api/client";
 
 export default function App() {
@@ -28,21 +28,32 @@ function Application() {
   const [consent, setConsent] = useState<boolean | null>(hostedMode ? null : true);
   const [showConsentPrompt, setShowConsentPrompt] = useState(hostedMode);
   const [consentError, setConsentError] = useState("");
+  const [consentSaving, setConsentSaving] = useState(false);
+  const consentSubmissionStarted = useRef(false);
   const [deletionPending, setDeletionPending] = useState(false);
   const [deletionError, setDeletionError] = useState("");
   useEffect(() => {
     if (!hostedMode || !ownerId) return;
+    let active = true;
+    consentSubmissionStarted.current = false;
     setConsent(null);
     setShowConsentPrompt(true);
     setDeletionPending(false);
     setDeletionError("");
-    getAIConsent().then((result) => { setConsent(result.accepted); setShowConsentPrompt(!result.accepted); }).catch((error: unknown) => {
+    getAIConsent().then((result) => {
+      if (active && !consentSubmissionStarted.current) {
+        setConsent(result.accepted);
+        setShowConsentPrompt(!result.accepted);
+      }
+    }).catch((error: unknown) => {
+      if (!active || consentSubmissionStarted.current) return;
       const status = (error as { response?: { status?: number } })?.response?.status;
       if (status === 410) {
         void getAccountDeletionStatus().then((result) => setDeletionPending(result.status === "deleting"))
           .catch(() => setConsentError("Could not check your account status. Try again."));
       } else setConsentError("Could not check your AI privacy preference. Try again.");
     });
+    return () => { active = false; };
   }, [ownerId]);
   if (hostedMode && loading) return <main className="auth-screen"><p>Checking your session…</p></main>;
   if (hostedMode && !session) return <SignInScreen />;
@@ -58,7 +69,17 @@ function Application() {
     <p>When you use an AI feature, the app sends the transaction details needed for that request to the model provider configured by the service. The app records the feature, model, time, and request count to enforce your allowance; it does not save prompts or transaction text in its AI usage log. Provider handling is subject to that provider’s terms.</p>
     {consentError && <p role="alert">{consentError}</p>}
     {consentError && <button type="button" onClick={() => { setConsentError(""); void getAIConsent().then((result) => setConsent(result.accepted)).catch(() => setConsentError("Could not check your AI privacy preference. Try again.")); }}>Retry</button>}
-    <button disabled={consent === null || Boolean(consentError)} onClick={() => { setConsentError(""); void acceptAIConsent().then(() => { setConsent(true); setShowConsentPrompt(false); }).catch(() => setConsentError("Could not save your choice. Please try again.")); }}>I understand and agree</button>
+    <button disabled={consentSaving} onClick={() => {
+      consentSubmissionStarted.current = true;
+      setConsentSaving(true);
+      setConsentError("");
+      void acceptAIConsent().then(() => {
+        setConsent(true);
+        setShowConsentPrompt(false);
+      }).catch(() => {
+        setConsentError("Could not save your choice. Please try again.");
+      }).finally(() => setConsentSaving(false));
+    }}>{consentSaving ? "Saving your choice…" : "I understand and agree"}</button>
     <button type="button" disabled={consent !== false} onClick={() => setShowConsentPrompt(false)} style={{ background: "#eef1ef", color: "#25352f" }}>Continue without AI</button>
     <button type="button" onClick={() => void signOut()} style={{ background: "#eef1ef", color: "#25352f" }}>Sign out</button>
   </section></main>;
