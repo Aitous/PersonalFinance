@@ -52,7 +52,7 @@ class PlaidClient:
             "country_codes": ["US"],
             "user": {"client_user_id": client_user_id},
             "products": ["transactions"],
-            "transactions": {"days_requested": 730},
+            "transactions": {"days_requested": 180},
         })
         token = result.get("link_token")
         if not isinstance(token, str) or not token:
