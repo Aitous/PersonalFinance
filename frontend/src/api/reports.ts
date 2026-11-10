@@ -1,4 +1,4 @@
-const BASE = "http://localhost:8000";
+import { api } from "./client";
 
 export interface CategoryItem {
   name: string;
@@ -103,31 +103,20 @@ export interface MonthlyCategoryExplanations {
 }
 
 export async function getMonthlyReport(year: number, month: number): Promise<MonthlyReport> {
-  const res = await fetch(`${BASE}/analysis/monthly-report?year=${year}&month=${month}`);
-  if (!res.ok) throw new Error("Failed to fetch monthly report");
-  return res.json();
+  const res = await api.get<MonthlyReport>("/analysis/monthly-report", { params: { year, month } });
+  return res.data;
 }
 
 export async function generateNarrative(year: number, month: number): Promise<string> {
-  const res = await fetch(
-    `${BASE}/analysis/monthly-report/narrative?year=${year}&month=${month}`,
-    { method: "POST" }
-  );
-  if (!res.ok) throw new Error("Failed to generate narrative");
-  const data = await res.json();
-  return data.narrative;
-}
-
-function categoryExplanationUrl(year: number, month: number, comparison: "recent3" | "prior"): string {
-  return `${BASE}/analysis/monthly-report/category-explanations?year=${year}&month=${month}&comparison=${comparison}`;
+  const res = await api.post<{ narrative: string }>("/analysis/monthly-report/narrative", null, { params: { year, month } });
+  return res.data.narrative;
 }
 
 export async function getCachedCategoryExplanations(
   year: number, month: number, comparison: "recent3" | "prior",
 ): Promise<MonthlyCategoryExplanations> {
-  const res = await fetch(categoryExplanationUrl(year, month, comparison));
-  if (!res.ok) throw new Error("Failed to load saved category explanations");
-  return res.json();
+  const res = await api.get<MonthlyCategoryExplanations>("/analysis/monthly-report/category-explanations", { params: { year, month, comparison } });
+  return res.data;
 }
 
 export async function generateCategoryExplanations(
@@ -136,11 +125,8 @@ export async function generateCategoryExplanations(
   const key = `${year}-${month}-${comparison}`;
   const existing = categoryExplanationRequests.get(key);
   if (existing) return existing;
-  const request = fetch(categoryExplanationUrl(year, month, comparison), { method: "POST" })
-    .then((res) => {
-      if (!res.ok) throw new Error("Failed to generate category explanations");
-      return res.json() as Promise<MonthlyCategoryExplanations>;
-    })
+  const request = api.post<MonthlyCategoryExplanations>("/analysis/monthly-report/category-explanations", null, { params: { year, month, comparison } })
+    .then((res) => res.data)
     .finally(() => categoryExplanationRequests.delete(key));
   categoryExplanationRequests.set(key, request);
   return request;

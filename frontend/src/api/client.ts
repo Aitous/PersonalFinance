@@ -2,7 +2,7 @@ import axios from "axios";
 import type { TransactionFilters } from "./transactionFilters";
 import { supabase } from "../auth";
 
-const api = axios.create({ baseURL: import.meta.env.VITE_API_BASE_URL || "http://localhost:8000", timeout: 300000 }); // 5 min — MFA may require user interaction
+export const api = axios.create({ baseURL: import.meta.env.VITE_API_BASE_URL || "http://localhost:8000", timeout: 300000 }); // 5 min — MFA may require user interaction
 api.interceptors.request.use(async (request) => {
   if (supabase) {
     const { data: { session } } = await supabase.auth.getSession();
