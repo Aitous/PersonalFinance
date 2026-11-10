@@ -317,8 +317,8 @@ export function ImportWorkspace() {
       <h2 style={{ margin: "0 0 6px", fontSize: 18 }}>Transaction processing</h2>
       <p style={{ margin: "0 0 14px", color: "#687973", fontSize: 13 }}>Enrichment fills in merchant details. Re-categorization updates categories using AI and may take a while.</p>
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-        <button onClick={handleEnrich} disabled={enriching}>{enriching ? "Enriching…" : "Enrich new transactions"}</button>
-        <button onClick={() => void recategorization.start()} disabled={enriching || recategorization.active}>{recategorization.active ? "Re-categorizing…" : "Re-categorize all with AI"}</button>
+        <button className="settings-button settings-button-primary" onClick={handleEnrich} disabled={enriching}>{enriching ? "Enriching…" : "Enrich new transactions"}</button>
+        <button className="settings-button settings-button-secondary" onClick={() => void recategorization.start()} disabled={enriching || recategorization.active}>{recategorization.active ? "Re-categorizing…" : "Re-categorize all with AI"}</button>
         {enrichMsg && <span role="status">{enrichMsg}</span>}
       </div>
     </section>
