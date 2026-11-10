@@ -57,7 +57,7 @@ export function SavingsTips() {
           {tips.map((tip, i) => (
             <div key={i} style={{ background: "#fff", borderRadius: 10, padding: "16px 20px", boxShadow: "0 1px 4px rgba(0,0,0,0.07)", display: "flex", gap: 14 }}>
               <span style={{ fontSize: 20 }}>💡</span>
-              <p style={{ margin: 0, fontSize: 15, lineHeight: 1.6 }}>{tip}</p>
+              <p style={{ margin: 0, fontSize: 15, lineHeight: 1.6 }}>{tip.split(/(\*\*[^*]+\*\*)/g).map((part, index) => part.startsWith("**") && part.endsWith("**") ? <strong key={index}>{part.slice(2, -2)}</strong> : part)}</p>
             </div>
           ))}
         </div>

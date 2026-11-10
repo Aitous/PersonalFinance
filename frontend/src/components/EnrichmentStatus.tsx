@@ -14,7 +14,7 @@ export function EnrichmentProvider({ children }: { children: ReactNode }) {
   const [starting, setStarting] = useState(false);
   const [connectionError, setConnectionError] = useState(false);
   const [startError, setStartError] = useState("");
-  const [dismissed, setDismissed] = useState("");
+  const [dismissed, setDismissed] = useState(() => sessionStorage.getItem("dismissed-enrichment") || "");
   const inFlight = useRef(false);
   const currentJob = useRef<string | null>(null);
   const generation = useRef(0);
@@ -42,7 +42,7 @@ export function EnrichmentProvider({ children }: { children: ReactNode }) {
   }, [refresh]);
 
   const start = useCallback(async () => {
-    setStarting(true); setStartError(""); setDismissed("");
+    setStarting(true); setStartError(""); setDismissed(""); sessionStorage.removeItem("dismissed-enrichment");
     try {
       const result = await triggerEnrichment();
       generation.current += 1;
@@ -64,7 +64,7 @@ export function EnrichmentProvider({ children }: { children: ReactNode }) {
         {job?.error && <span>{job.error}</span>}
       </div>
       {active && job && job.total > 0 && <progress max={job.total} value={job.done} aria-label="Enrichment progress" />}
-      {(!active && (job || startError)) && <button type="button" onClick={() => { setStartError(""); if (job?.id) setDismissed(job.id); }}>Dismiss</button>}
+      {(!active && (job || startError)) && <button type="button" onClick={() => { setStartError(""); if (job?.id) { setDismissed(job.id); sessionStorage.setItem("dismissed-enrichment", job.id); } }}>Dismiss</button>}
     </div>}
     {children}
   </EnrichmentContext.Provider>;
