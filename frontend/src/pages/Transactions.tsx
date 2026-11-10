@@ -563,7 +563,7 @@ export function Transactions() {
             })}
           </tbody>
         </table>
-        {txs.length === 0 && (
+        {!pending && !isSearching && !loadError && !invalidRange && txs.length === 0 && (
           <p style={{ textAlign: "center", color: "#aaa", padding: 40 }}>No transactions match these filters. Try a wider range or clear filters.</p>
         )}
       </div>
