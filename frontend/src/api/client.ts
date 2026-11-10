@@ -202,6 +202,9 @@ export const getEnrichStatus = (mode?: "enrich" | "recategorize") =>
 export const getEnrichJob = (id: string) =>
   api.get(`/import/enrich/jobs/${encodeURIComponent(id)}`).then((r) => r.data);
 
+export const resumeEnrichJob = (id: string) =>
+  api.post(`/import/enrich/jobs/${encodeURIComponent(id)}/resume`).then((r) => r.data);
+
 export const triggerRecategorize = () =>
   api.post("/import/recategorize").then((r) => r.data);
 

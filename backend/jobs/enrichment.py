@@ -5,7 +5,7 @@ import hashlib
 import json
 import uuid
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select, update
 
@@ -96,9 +96,34 @@ def job_payload(session, job: EnrichmentJob) -> dict:
         EnrichmentJobItem.job_id == job.id
     )).scalars().all()
     counts = {state: sum(i.status == state for i in items) for state in ("pending", "running", "success", "fallback", "failed", "other")}
+    updated = job.updated_at.replace(tzinfo=timezone.utc) if job.updated_at.tzinfo is None else job.updated_at
     return {"id": job.id, "mode": job.mode, "status": job.status, "total": job.total,
+        "resumable": job.status in {"pending", "running"} and updated < datetime.now(timezone.utc) - timedelta(hours=1),
         "done": job.done, "remaining": max(job.total - job.done, 0), "error": job.error,
         "outcomes": counts, "created_at": job.created_at, "updated_at": job.updated_at}
+
+
+def resume_stalled_job(job_id: str) -> bool:
+    """Atomically reclaim a job that has not reported progress for an hour."""
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=1)
+    if not _runner_lock.acquire(blocking=False):
+        return False
+    try:
+        with get_session() as session:
+            claimed = session.execute(update(EnrichmentJob).where(
+                EnrichmentJob.id == job_id,
+                EnrichmentJob.status.in_(["pending", "running"]),
+                EnrichmentJob.updated_at < cutoff,
+            ).values(status="pending", error=None, updated_at=datetime.now(timezone.utc)))
+            if claimed.rowcount != 1:
+                return False
+            session.execute(update(EnrichmentJobItem).where(
+                EnrichmentJobItem.job_id == job_id,
+                EnrichmentJobItem.status == "running",
+            ).values(status="pending"))
+            return True
+    finally:
+        _runner_lock.release()
 
 
 def run_job(job_id: str, llm=None) -> None:

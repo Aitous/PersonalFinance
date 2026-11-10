@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { getEnrichJob, getEnrichStatus, triggerRecategorize } from "../api/client";
+import { getEnrichJob, getEnrichStatus, resumeEnrichJob, triggerRecategorize } from "../api/client";
 import { RecategorizationContext } from "./recategorizationContext";
 import "./RecategorizationStatus.css";
 
-interface Job { id?: string; mode?: string; status: "idle" | "pending" | "running" | "done" | "error"; done: number; total: number; error?: string | null; outcomes?: { failed?: number; fallback?: number; other?: number } }
+interface Job { id?: string; mode?: string; status: "idle" | "pending" | "running" | "done" | "error"; done: number; total: number; resumable?: boolean; error?: string | null; outcomes?: { failed?: number; fallback?: number; other?: number } }
 export function RecategorizationProvider({ children }: { children: ReactNode }) {
   const [job, setJob] = useState<Job | null>(null);
   const [starting, setStarting] = useState(false);
@@ -62,9 +62,11 @@ export function RecategorizationProvider({ children }: { children: ReactNode }) 
       <div className="recategorization-status-text"><strong>{message}</strong>
         {job && job.total > 0 && <span>{job.done.toLocaleString()} of {job.total.toLocaleString()} processed{job.outcomes?.failed ? ` · ${job.outcomes.failed} failed` : ""}{job.outcomes?.fallback ? ` · ${job.outcomes.fallback} fallback` : ""}{job.outcomes?.other ? ` · ${job.outcomes.other} classified as Other` : ""}</span>}
         {connectionError && <span>Could not refresh progress. Reconnecting…</span>}
+        {job?.resumable && <span>No progress reported for over an hour. You can resume the unfinished transactions.</span>}
         {job?.status === "error" && job.error && <span>{job.error}</span>}
       </div>
       {active && job && job.total > 0 && <progress max={job.total} value={job.done} aria-label="Re-categorization progress" />}
+      {job?.resumable && job.id && <button type="button" disabled={starting} onClick={() => { setStarting(true); setStartError(""); void resumeEnrichJob(job.id!).then(() => refresh()).catch(() => setStartError("Could not resume the job. Please try again.")).finally(() => setStarting(false)); }}>Resume job</button>}
       {(completed || !!startError) && <button type="button" aria-label="Dismiss re-categorization status" onClick={() => { setStartError(""); if (job?.id) { setDismissed(job.id); sessionStorage.setItem("dismissed-recategorization", job.id); } }}>Dismiss</button>}
     </div>}
     {children}

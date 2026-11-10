@@ -503,6 +503,15 @@ def enrich_job_status(job_id: str):
         return job_payload(session, job)
 
 
+@router.post("/import/enrich/jobs/{job_id}/resume")
+def resume_enrichment_job(job_id: str, background_tasks: BackgroundTasks):
+    from backend.jobs.enrichment import resume_stalled_job, run_job
+    if not resume_stalled_job(job_id):
+        raise HTTPException(status_code=409, detail="This job is not stalled or is no longer available.")
+    background_tasks.add_task(run_job, job_id)
+    return {"id": job_id, "status": "pending"}
+
+
 @router.post("/import/enrich")
 def enrich_existing(background_tasks: BackgroundTasks, new_only: bool = False):
     """Queue an explicit, durable retry of missing and fallback enrichment."""

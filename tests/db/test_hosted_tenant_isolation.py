@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 from sqlalchemy import create_engine, select
@@ -7,7 +7,7 @@ from sqlalchemy.pool import StaticPool
 
 from backend.auth import reset_current_owner, set_current_owner
 from backend.db import database
-from backend.db.models import Base, Transaction
+from backend.db.models import Base, EnrichmentJob, Transaction
 import backend.db.tenancy  # noqa: F401 - register tenant-scoping ORM hooks
 
 
@@ -68,5 +68,27 @@ def test_cannot_write_a_row_for_another_user(isolated_database):
                     amount=10,
                     owner_id="user-b",
                 ))
+    finally:
+        reset_current_owner(owner_token)
+
+
+def test_cannot_resume_another_users_job(isolated_database):
+    from backend.jobs.enrichment import resume_stalled_job
+    owner_token = set_current_owner("user-b")
+    try:
+        with database.get_session() as session:
+            session.add(EnrichmentJob(id="other-job", mode="recategorize", status="running", total=1, done=0,
+                                      updated_at=datetime.now(timezone.utc) - timedelta(hours=4)))
+    finally:
+        reset_current_owner(owner_token)
+    owner_token = set_current_owner("user-a")
+    try:
+        assert resume_stalled_job("other-job") is False
+    finally:
+        reset_current_owner(owner_token)
+    owner_token = set_current_owner("user-b")
+    try:
+        with database.get_session() as session:
+            assert session.get(EnrichmentJob, "other-job").status == "running"
     finally:
         reset_current_owner(owner_token)

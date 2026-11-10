@@ -1,5 +1,5 @@
 from contextlib import contextmanager
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
@@ -10,7 +10,33 @@ from sqlalchemy.pool import StaticPool
 from backend.db.models import Base, EnrichmentJob, EnrichmentJobItem, Transaction
 from backend.main import app
 from backend.analysis.categorizer import TransactionEnrichment
-from backend.jobs.enrichment import create_job, run_job
+from backend.jobs.enrichment import create_job, run_job, resume_stalled_job
+
+
+def test_resume_stalled_job_preserves_completed_items_and_requeues_running():
+    engine = create_engine('sqlite://', connect_args={'check_same_thread': False}, poolclass=StaticPool)
+    Base.metadata.create_all(engine)
+
+    @contextmanager
+    def session_scope():
+        with Session(engine) as session:
+            yield session
+            session.commit()
+
+    with session_scope() as session:
+        session.add(EnrichmentJob(id='stale', mode='recategorize', status='running', total=3, done=1,
+                                  updated_at=datetime.now(timezone.utc) - timedelta(hours=4)))
+        session.add_all([EnrichmentJobItem(job_id='stale', transaction_id=key, status=status, attempts=1)
+                         for key, status in [('done', 'success'), ('running', 'running'), ('pending', 'pending')]])
+    with patch('backend.jobs.enrichment.get_session', session_scope):
+        assert resume_stalled_job('stale') is True
+        assert resume_stalled_job('stale') is False
+    with session_scope() as session:
+        job = session.get(EnrichmentJob, 'stale')
+        assert (job.status, job.done) == ('pending', 1)
+        assert {item.transaction_id: item.status for item in session.query(EnrichmentJobItem)} == {
+            'done': 'success', 'running': 'pending', 'pending': 'pending'}
+    engine.dispose()
 
 
 def test_new_only_selects_previously_queued_unprocessed_transactions():
