@@ -194,7 +194,7 @@ export const getInsights = (merchantDays = 90, range?: { from: string; to: strin
   api.get("/analysis/insights", { params: range ? { date_from: range.from, date_to: range.to } : { merchant_days: merchantDays } }).then((r) => r.data);
 
 export const triggerEnrichment = () =>
-  api.post("/import/enrich").then((r) => r.data);
+  api.post("/import/enrich", null, { params: { new_only: true } }).then((r) => r.data);
 
 export const getEnrichStatus = (mode?: "enrich" | "recategorize") =>
   api.get("/import/enrich/status", { params: { mode } }).then((r) => r.data);

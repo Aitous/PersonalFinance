@@ -8,6 +8,7 @@ import { Subscriptions } from "./pages/Subscriptions";
 import Reports from "./pages/Reports";
 import { AskTransactions } from "./pages/AskTransactions";
 import { RecategorizationProvider } from "./components/RecategorizationStatus";
+import { EnrichmentProvider } from "./components/EnrichmentStatus";
 import { SectionLayout } from "./components/SectionLayout";
 import { SpendingAnalysis } from "./pages/SpendingAnalysis";
 import { AuthProvider, hostedMode, SignInScreen, useAuth } from "./auth";
@@ -89,7 +90,7 @@ function Application() {
         <main className="app-main">
           {hostedMode && consent === false && <div className="ai-consent-banner">AI features are off until you agree to the data-use notice. <button onClick={() => { setConsentError(""); setShowConsentPrompt(true); }}>Review AI privacy choice</button></div>}
           {hostedMode && <button className="sign-out-button" onClick={() => void signOut()}>Sign out</button>}
-          <RecategorizationProvider>
+          <RecategorizationProvider><EnrichmentProvider>
           <Routes>
             <Route path="/" element={<Overview />} />
             <Route element={<SectionLayout section="transactions" />}>
@@ -106,7 +107,7 @@ function Application() {
             </Route>
             <Route path="/settings" element={<Settings />} />
           </Routes>
-          </RecategorizationProvider>
+          </EnrichmentProvider></RecategorizationProvider>
         </main>
       </div>
     </BrowserRouter>;

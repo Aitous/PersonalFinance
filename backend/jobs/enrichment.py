@@ -22,7 +22,7 @@ def _input_hash(tx: Transaction) -> str:
     return hashlib.sha256(json.dumps(payload, ensure_ascii=False).encode()).hexdigest()
 
 
-def create_job(mode: str = "enrich") -> tuple[str, bool]:
+def create_job(mode: str = "enrich", new_only: bool = False) -> tuple[str, bool]:
     """Create or return the active durable job for the requested mode."""
     if mode not in {"enrich", "recategorize"}:
         raise ValueError("unsupported enrichment mode")
@@ -41,6 +41,11 @@ def create_job(mode: str = "enrich") -> tuple[str, bool]:
                 tx.enrichment_status == "fallback" or tx.merchant_name is None or
                 tx.merchant_type in (None, "unknown") or tx.category is None
             )]
+            if new_only:
+                queued_ids = set(session.execute(select(EnrichmentJobItem.transaction_id).join(
+                    EnrichmentJob, EnrichmentJob.id == EnrichmentJobItem.job_id
+                ).where(EnrichmentJob.mode == "enrich", EnrichmentJobItem.status.in_(["pending", "running", "failed"]))).scalars())
+                candidates = [tx for tx in candidates if tx.id in queued_ids and tx.enrichment_status is None and not tx.raw_enrichment]
         job_id = str(uuid.uuid4())
         job = EnrichmentJob(id=job_id, mode=mode, status="pending", total=len(candidates), done=0)
         session.add(job)

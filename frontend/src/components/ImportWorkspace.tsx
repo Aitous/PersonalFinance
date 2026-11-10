@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { confirmImportInbox, createAccount, getAccounts, getDataQuality, getEnrichStatus, getImportBatches, getImportInbox, previewCSV, previewImportInbox, triggerEnrichment, uploadCSV } from "../api/client";
+import { confirmImportInbox, createAccount, getAccounts, getDataQuality, getImportBatches, getImportInbox, previewCSV, previewImportInbox, uploadCSV } from "../api/client";
 import type { BankAccount, DataQuality, ImportBatchSummary, ImportInboxFile, ImportSummary, InboxPreview } from "../api/client";
 import { previewRequestKey, samePreviewRequest } from "../api/reliabilityHelpers";
 import type { PreviewRequestKey } from "../api/reliabilityHelpers";
-import { useRecategorization } from "./recategorizationContext";
+import { useEnrichment, useRecategorization } from "./recategorizationContext";
 import { hostedMode } from "../auth";
 
 function errorDetail(error: unknown, fallback: string): string {
@@ -17,6 +17,7 @@ const SECTION: React.CSSProperties = { background: "#fff", border: "1px solid #e
 
 export function ImportWorkspace() {
   const recategorization = useRecategorization();
+  const enrichment = useEnrichment();
   const [importing, setImporting] = useState(false);
   const [importMsg, setImportMsg] = useState<string | null>(null);
   const [uploadBank, setUploadBank] = useState("chase");
@@ -33,8 +34,6 @@ export function ImportWorkspace() {
   const [qualityError, setQualityError] = useState<string | null>(null);
   const [importBatches, setImportBatches] = useState<ImportBatchSummary[]>([]);
   const [batchError, setBatchError] = useState<string | null>(null);
-  const [enriching, setEnriching] = useState(false);
-  const [enrichMsg, setEnrichMsg] = useState<string | null>(null);
   const [inboxFiles, setInboxFiles] = useState<ImportInboxFile[]>([]);
   const [inboxFolder, setInboxFolder] = useState("transactions/inbox");
   const [inboxLoading, setInboxLoading] = useState(true);
@@ -212,27 +211,6 @@ export function ImportWorkspace() {
     } catch (error) { setImportMsg(`Could not add account: ${errorDetail(error, "Please try again.")}`); }
   };
 
-  const handleEnrich = async () => {
-    setEnriching(true);
-    setEnrichMsg("Starting enrichment…");
-    try {
-      await triggerEnrichment();
-      const poll = async (): Promise<void> => {
-        const status = await getEnrichStatus("enrich");
-        if (status.status === "error") { setEnrichMsg(`Enrichment failed: ${status.error}`); setEnriching(false); }
-        else if (status.status === "done") { setEnrichMsg(`Done — ${status.done} transactions enriched.`); setEnriching(false); void refreshQuality(); }
-        else if (status.status === "running") {
-          setEnrichMsg(`Enriching transactions${status.total > 0 ? ` (${status.done}/${status.total})` : ""}…`);
-          setTimeout(poll, 2000);
-        } else { setEnrichMsg("Enrichment queued, starting…"); setTimeout(poll, 1000); }
-      };
-      setTimeout(poll, 1000);
-    } catch (error: any) {
-      setEnrichMsg(`Enrichment failed: ${error?.response?.data?.detail ?? error.message}`);
-      setEnriching(false);
-    }
-  };
-
   return <div>
     {!hostedMode && <section className="import-inbox-section" aria-labelledby="import-inbox-heading">
       <div className="import-inbox-header">
@@ -317,9 +295,8 @@ export function ImportWorkspace() {
       <h2 style={{ margin: "0 0 6px", fontSize: 18 }}>Transaction processing</h2>
       <p style={{ margin: "0 0 14px", color: "#687973", fontSize: 13 }}>Enrichment fills in merchant details. Re-categorization updates categories using AI and may take a while.</p>
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-        <button className="settings-button settings-button-primary" onClick={handleEnrich} disabled={enriching}>{enriching ? "Enriching…" : "Enrich new transactions"}</button>
-        <button className="settings-button settings-button-secondary" onClick={() => void recategorization.start()} disabled={enriching || recategorization.active}>{recategorization.active ? "Re-categorizing…" : "Re-categorize all with AI"}</button>
-        {enrichMsg && <span role="status">{enrichMsg}</span>}
+        <button className="settings-button settings-button-primary" onClick={() => void enrichment.start()} disabled={enrichment.active || recategorization.active}>{enrichment.active ? "Enriching…" : "Enrich new transactions"}</button>
+        <button className="settings-button settings-button-secondary" onClick={() => void recategorization.start()} disabled={enrichment.active || recategorization.active}>{recategorization.active ? "Re-categorizing…" : "Re-categorize all with AI"}</button>
       </div>
     </section>
 

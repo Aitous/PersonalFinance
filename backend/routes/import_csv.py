@@ -12,7 +12,7 @@ from typing import Optional
 from fastapi import APIRouter, BackgroundTasks, HTTPException, UploadFile, File, Form, Query
 from pydantic import BaseModel
 
-from sqlalchemy import select, or_
+from sqlalchemy import case, select, or_
 from backend.db.database import get_session
 from backend.db.models import Transaction, Account, ImportBatch, ImportedRow
 from backend.parsers.csv_parser import parse_csv_detailed, BANK_SCHEMAS
@@ -483,6 +483,8 @@ def enrich_status(mode: Optional[str] = Query(default=None, pattern="^(enrich|re
         query = select(EnrichmentJob)
         if mode:
             query = query.where(EnrichmentJob.mode == mode)
+        if mode:
+            query = query.order_by(case((EnrichmentJob.status.in_(["pending", "running"]), 0), else_=1))
         job = session.execute(query.order_by(EnrichmentJob.created_at.desc())).scalars().first()
         if not job:
             return {"status": "idle", "total": 0, "done": 0, "remaining": 0, "error": None}
@@ -502,10 +504,10 @@ def enrich_job_status(job_id: str):
 
 
 @router.post("/import/enrich")
-def enrich_existing(background_tasks: BackgroundTasks):
+def enrich_existing(background_tasks: BackgroundTasks, new_only: bool = False):
     """Queue an explicit, durable retry of missing and fallback enrichment."""
     from backend.jobs.enrichment import create_job, run_job
-    job_id, created = create_job("enrich")
+    job_id, created = create_job("enrich", new_only=new_only)
     if created:
         background_tasks.add_task(run_job, job_id)
         from backend.routes.search import _embed_all

@@ -13,6 +13,34 @@ from backend.analysis.categorizer import TransactionEnrichment
 from backend.jobs.enrichment import create_job, run_job
 
 
+def test_new_only_selects_previously_queued_unprocessed_transactions():
+    engine = create_engine('sqlite://', connect_args={'check_same_thread': False}, poolclass=StaticPool)
+    Base.metadata.create_all(engine)
+
+    @contextmanager
+    def session_scope():
+        with Session(engine) as session:
+            yield session
+            session.commit()
+
+    with session_scope() as session:
+        session.add(EnrichmentJob(id='old-job', mode='enrich', status='error', total=3, done=3))
+        session.add_all([
+            Transaction(id=key, source='chase', date=date(2026, 1, 1), description='RAW', amount=10,
+                        category='other', enrichment_status=status, raw_enrichment=raw)
+            for key, status, raw in [('new', None, None), ('fallback', 'fallback', None),
+                                     ('legacy', None, '{"merchant":"old"}'), ('unknown', None, None)]
+        ])
+        session.add_all([EnrichmentJobItem(job_id='old-job', transaction_id=key, status=status, attempts=1)
+                         for key, status in [('new', 'failed'), ('fallback', 'fallback'), ('legacy', 'failed')]])
+    with patch('backend.jobs.enrichment.get_session', session_scope):
+        job_id, _ = create_job('enrich', new_only=True)
+    with session_scope() as session:
+        ids = [item.transaction_id for item in session.query(EnrichmentJobItem).filter_by(job_id=job_id)]
+        assert ids == ['new']
+    engine.dispose()
+
+
 def test_status_can_select_recategorization_when_another_job_is_newer():
     from datetime import datetime, timedelta, timezone
     engine = create_engine('sqlite://', connect_args={'check_same_thread': False}, poolclass=StaticPool)
