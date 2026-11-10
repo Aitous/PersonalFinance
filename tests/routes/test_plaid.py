@@ -110,7 +110,7 @@ def test_production_sync_imports_posted_rows_and_persists_cursor_atomically():
          patch.object(plaid.credentials_store, "get_bank_credential", return_value="access"), \
          patch.object(plaid, "reconcile_subscriptions"), \
          patch.object(plaid, "invalidate_derived_data"), \
-         patch("backend.jobs.enrichment.enqueue_transactions", return_value=None):
+         patch("backend.jobs.enrichment.enqueue_transactions", return_value="enrich-job"):
         result = plaid.sync_item("prod-item", BackgroundTasks(), "production")
         repeated = plaid.sync_item("prod-item", BackgroundTasks(), "production")
 
@@ -120,7 +120,9 @@ def test_production_sync_imports_posted_rows_and_persists_cursor_atomically():
         assert row is not None and row.source == "chase" and row.amount == 19.5
         assert item.cursor == "next-cursor" and item.imported_count == 1
         assert result["transaction_counts"]["imported"] == 1
+        assert result["enrichment_job_id"] == "enrich-job"
         assert repeated["transaction_counts"]["imported"] == 0
+        assert repeated["enrichment_job_id"] is None
         assert session.query(Transaction).count() == 1
     engine.dispose()
 

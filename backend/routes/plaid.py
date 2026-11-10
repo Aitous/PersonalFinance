@@ -177,6 +177,7 @@ def sync_item(item_id: str, background_tasks: BackgroundTasks,
                             break
                     ingestion = {"imported": 0, "duplicates": 0, "modified": 0,
                                  "removed": 0, "new_transaction_ids": []}
+                    job_id = None
                     if environment == "production":
                         ingestion = apply_transaction_deltas(
                             session, environment=environment, item_id=item_id,
@@ -205,6 +206,7 @@ def sync_item(item_id: str, background_tasks: BackgroundTasks,
                     item.duplicate_count = (item.duplicate_count or 0) + ingestion["duplicates"]
                     return {"item_id": item_id, "environment": environment,
                             "last_sync_at": item.last_sync_at.isoformat(), "sync_counts": totals,
+                            "enrichment_job_id": job_id,
                             "transaction_counts": {key: ingestion[key] for key in
                                 ("imported", "duplicates", "modified", "removed")}}
                 except PlaidAPIError as exc:

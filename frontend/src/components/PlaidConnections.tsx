@@ -82,7 +82,7 @@ export function PlaidConnections() {
       await refresh();
       const imported = result.transaction_counts?.imported ?? 0;
       setMessage(environment === "production"
-        ? `${item.institution_name} synced. ${imported} new transaction${imported === 1 ? "" : "s"} added to spending.`
+        ? `${item.institution_name} synced. ${imported} new transaction${imported === 1 ? "" : "s"} added to spending.${result.enrichment_job_id ? " Enrichment is queued; follow its progress in the status banner above." : ""}`
         : `${item.institution_name} Sandbox sync completed.`);
     } catch (e) { setError(readableError(e)); }
     finally { setBusy(""); }
