@@ -5,17 +5,8 @@ const url = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
 export const hostedMode = import.meta.env.VITE_APP_MODE === "hosted" || Boolean(url || anonKey);
 
-// A memory adapter avoids putting the Supabase bearer/refresh tokens in
-// localStorage. Users sign in again after a full browser refresh.
-const memory = new Map<string, string>();
-const memoryStorage = {
-  getItem: (key: string) => memory.get(key) ?? null,
-  setItem: (key: string, value: string) => { memory.set(key, value); },
-  removeItem: (key: string) => { memory.delete(key); },
-};
-
 export const supabase: SupabaseClient | null = hostedMode && url && anonKey
-  ? createClient(url!, anonKey!, { auth: { flowType: "implicit", storage: memoryStorage, persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } })
+  ? createClient(url!, anonKey!, { auth: { flowType: "implicit", storage: window.sessionStorage, persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } })
   : null;
 
 type AuthValue = { session: Session | null; loading: boolean; signOut: () => Promise<void> };

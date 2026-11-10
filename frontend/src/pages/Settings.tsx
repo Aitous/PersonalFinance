@@ -81,7 +81,7 @@ export function Settings() {
         <h2 style={{ fontSize: 16, marginTop: 0, marginBottom: 8 }}>AI access</h2>
         <p style={{ color: "#687973", fontSize: 13, margin: 0 }}>AI is provided by this service. Your transactions are sent to the configured model only when you use an AI feature. The monthly request allowance is enforced automatically.</p>
         {usage && <p style={{ color: "#687973", fontSize: 13 }}>Requests this month: <strong>{usage.ai_requests_used} / {usage.ai_requests_limit}</strong>. Resets {new Date(usage.resets_at).toLocaleDateString()}.</p>}
-        <button onClick={() => void handleRevokeAI()} style={{ padding: "8px 12px" }}>Turn off AI for my account</button>
+        <button className="settings-button settings-button-secondary" onClick={() => void handleRevokeAI()}>Turn off AI for my account</button>
       </div>}
       <div id="category-rules"><CategoryRules /></div>
       <PlaidConnections />
@@ -91,8 +91,8 @@ export function Settings() {
         <p style={{ color: "#687973", fontSize: 13 }}>Download a copy of your imported financial data, or permanently close your account.</p>
         {accountError && <p role="alert" style={{ color: "#b42318" }}>{accountError}</p>}
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <button onClick={() => void handleExport()} style={{ padding: "9px 14px" }}>Export my data</button>
-          <button onClick={() => void handleDelete()} style={{ padding: "9px 14px", color: "#b42318" }}>Delete account and data</button>
+          <button className="settings-button settings-button-secondary" onClick={() => void handleExport()}>Export my data</button>
+          <button className="settings-button settings-button-danger" onClick={() => void handleDelete()}>Delete account and data</button>
         </div>
       </section>}
       <div style={SECTION}>

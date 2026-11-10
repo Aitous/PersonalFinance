@@ -45,12 +45,12 @@ export function CategoryRules() {
     <form onSubmit={(event) => void addRule(event)} style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "end" }}>
       <label style={{ display: "grid", gap: 5, fontSize: 12 }}>Merchant name<input value={merchant} onChange={(event) => setMerchant(event.target.value)} maxLength={200} placeholder="e.g. Trader Joe's" /></label>
       <label style={{ display: "grid", gap: 5, fontSize: 12 }}>Category<select value={category} onChange={(event) => setCategory(event.target.value)}><option value="">Choose category</option>{CATEGORIES.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
-      <button type="submit" disabled={busy || !merchant.trim() || !category} style={{ border: 0, borderRadius: 8, padding: "8px 16px", background: "#287c61", color: "#fff" }}>Save rule</button>
+      <button className="settings-button settings-button-primary" type="submit" disabled={busy || !merchant.trim() || !category}>Save rule</button>
     </form>
     {message && <p role="status" style={{ fontSize: 13, color: "#315f49" }}>{message}</p>}
     {rules.length > 0 && <ul style={{ listStyle: "none", padding: 0, margin: "18px 0 0", display: "grid", gap: 8 }}>{rules.map((rule) => <li key={rule.id} style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 10, padding: "9px 12px", background: "#f6f9f5", borderRadius: 8, fontSize: 13 }}>
       <span style={{ flex: 1 }}><strong>{rule.merchant}</strong> → {rule.category}{!rule.enabled && " · Paused"}</span>
-      <button type="button" disabled={busy} onClick={() => void toggleRule(rule)} aria-label={`${rule.enabled ? "Pause" : "Enable"} rule for ${rule.merchant}`}>{rule.enabled ? "Pause" : "Enable"}</button>
+      <button className="settings-button settings-button-secondary" type="button" disabled={busy} onClick={() => void toggleRule(rule)} aria-label={`${rule.enabled ? "Pause" : "Enable"} rule for ${rule.merchant}`}>{rule.enabled ? "Pause" : "Enable"}</button>
     </li>)}</ul>}
   </section>;
 }

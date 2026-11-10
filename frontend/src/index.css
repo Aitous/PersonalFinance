@@ -128,6 +128,15 @@ input::placeholder, textarea::placeholder { color: #738094; opacity: 1; }
 .settings-jumps a { border: 1px solid #d7e4d6; border-radius: 999px; padding: 7px 11px; background: #f8fbf7; color: #37674e; font-size: 12px; font-weight: 650; text-decoration: none; }
 .settings-jumps a:hover, .settings-jumps a:focus-visible { background: #edf5ea; border-color: #94b99a; }
 #ai-provider, #category-rules, #plaid-sandbox, #data-coverage { scroll-margin-top: 18px; }
+.settings-button { display: inline-flex; align-items: center; justify-content: center; min-height: 40px; padding: 10px 16px; border: 1px solid transparent; border-radius: 10px; font: inherit; font-size: 13px; font-weight: 700; line-height: 1.2; cursor: pointer; transition: background-color .16s, border-color .16s, box-shadow .16s, transform .16s; }
+.settings-button-primary { background: #246e55; color: #fff; box-shadow: 0 2px 5px #1b583b24; }
+.settings-button-primary:hover:not(:disabled) { background: #195c46; }
+.settings-button-secondary { background: #f1f6f2; border-color: #d6e6dc; color: #255c47; }
+.settings-button-secondary:hover:not(:disabled) { background: #e4f0e8; border-color: #a9cbb5; }
+.settings-button-danger { background: #fff7f5; border-color: #f0d4ce; color: #a43930; }
+.settings-button-danger:hover:not(:disabled) { background: #fbeae7; border-color: #e5aaa0; }
+.settings-button:focus-visible { outline: 3px solid #90c6aa; outline-offset: 3px; }
+.settings-button:disabled { opacity: .48; cursor: not-allowed; box-shadow: none; }
 .plaid-connections { margin-bottom: 24px; padding: 24px; border: 1px solid #dce5df; border-radius: 12px; background: #fff; box-shadow: var(--shadow-card); }
 .plaid-connections-heading { display: flex; justify-content: space-between; align-items: center; gap: 14px; }
 .plaid-connections-heading h2 { margin: 5px 0 0; color: #263b30; font-size: 18px; }
