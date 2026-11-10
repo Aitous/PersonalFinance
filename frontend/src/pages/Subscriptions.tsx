@@ -69,7 +69,7 @@ export function Subscriptions() {
       <div style={{ padding: "16px 18px 10px" }}>
         <h2 style={{ margin: 0, fontSize: 17 }}>{title}</h2>
         <p style={{ margin: "5px 0 0", color: "#788397", fontSize: 12 }}>
-          {variable ? "Likely automatic bills with changing amounts. Average uses up to six complete months with observed charges." : "Likely automatic bills with stable charge amounts."}
+          {variable ? "Likely automatic bills with changing amounts." : "Likely automatic bills with stable charge amounts."} Detected averages use up to six prior observed months (or years for annual charges), excluding the current period when prior periods are available.
         </p>
       </div>
       <div style={{ overflowX: "auto" }}>
@@ -78,7 +78,7 @@ export function Subscriptions() {
             <th style={{ padding: "12px 16px" }}>Service</th>
             <th style={{ padding: "12px 16px" }}>Frequency</th>
             <th style={{ padding: "12px 16px" }}>Last Charged</th>
-            <th style={{ padding: "12px 16px", textAlign: "right" }}>{variable ? "Average / Latest" : "Amount"}</th>
+            <th style={{ padding: "12px 16px", textAlign: "right" }}>Amount</th>
             <th style={{ padding: "12px 16px", textAlign: "center" }}>Active</th>
             <th style={{ padding: "12px 16px" }}></th>
           </tr></thead>
@@ -100,7 +100,8 @@ export function Subscriptions() {
                 <td style={{ padding: "10px 16px", textAlign: "right" }}>
                   {variable ? <><strong>${monthlyEquivalent(sub).toFixed(2)} avg/mo</strong>
                     <div style={{ color: "#788397", fontSize: 12 }}>Latest period ${sub.latest_period_amount.toFixed(2)}</div></>
-                    : <strong>${fixedPeriodAmount(sub).toFixed(2)} / {sub.frequency === "annual" ? "year" : "month"}</strong>}
+                    : <><strong>${fixedPeriodAmount(sub).toFixed(2)} / {sub.frequency === "annual" ? "year" : "month"}</strong>
+                      {sub.origin === "detected" && <div style={{ color: "#788397", fontSize: 12 }}>Latest period · ${monthlyEquivalent(sub).toFixed(2)} avg/mo</div>}</>}
                 </td>
                 <td style={{ padding: "10px 16px", textAlign: "center" }}>
                   <input type="checkbox" aria-label={`${sub.active ? "Deactivate" : "Activate"} ${sub.description}`} checked={sub.active} onChange={() => toggleActive(sub.id, sub.active)} />
@@ -167,16 +168,17 @@ export function Subscriptions() {
       {redetectMessage && <p role="status" style={{ color: "#23704c", margin: "-6px 0 16px", fontSize: 13 }}>{redetectMessage}</p>}
       {redetectError && <p role="alert" style={{ color: "#a43e33", margin: "-6px 0 16px", fontSize: 13 }}>{redetectError}</p>}
 
-      <div style={{ display: "flex", gap: 16, marginBottom: 28 }}>
+      <div style={{ display: "flex", gap: 16, marginBottom: 12, flexWrap: "wrap" }}>
         <div style={{ background: "#fff", borderRadius: 10, padding: "14px 20px", boxShadow: "0 1px 4px rgba(0,0,0,0.07)" }}>
-          <div style={{ color: "#888", fontSize: 12 }}>Active monthly total</div>
+          <div style={{ color: "#888", fontSize: 12 }}>Estimated active monthly total</div>
           <div style={{ fontSize: 24, fontWeight: 700 }}>${monthlyTotal.toFixed(2)}</div>
         </div>
         <div style={{ background: "#fff", borderRadius: 10, padding: "14px 20px", boxShadow: "0 1px 4px rgba(0,0,0,0.07)" }}>
-          <div style={{ color: "#888", fontSize: 12 }}>Active annual total</div>
+          <div style={{ color: "#888", fontSize: 12 }}>Estimated active annual total</div>
           <div style={{ fontSize: 24, fontWeight: 700 }}>${annualTotal.toFixed(2)}</div>
         </div>
       </div>
+      <p style={{ color: "#62776d", fontSize: 13, margin: "0 0 28px" }}>Totals add each active charge’s monthly average; the annual estimate is that total multiplied by 12. Latest-period amounts can differ from those averages.</p>
 
       {showAdd && (
         <div style={{ background: "#fff", borderRadius: 10, padding: "16px 20px", marginBottom: 16, boxShadow: "0 1px 4px rgba(0,0,0,0.07)", display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" }}>

@@ -256,7 +256,7 @@ export function AskTransactions() {
         New conversation
       </button>}
     </header>
-    <DataCoverageNotice />
+    <DataCoverageNotice locationGuidance />
 
     {turns.length > 0 && <section className="ask-chat" aria-label="Conversation" aria-live="polite">
       {turns.map((turn, index) => {

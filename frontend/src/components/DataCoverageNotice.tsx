@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { getDataQuality } from "../api/client";
 import type { DataQuality } from "../api/client";
 
-export function DataCoverageNotice() {
+export function DataCoverageNotice({ locationGuidance = false }: { locationGuidance?: boolean }) {
   const [quality, setQuality] = useState<DataQuality | null>(null);
   const [error, setError] = useState(false);
   const [attempt, setAttempt] = useState(0);
@@ -35,5 +35,8 @@ export function DataCoverageNotice() {
       {quality.missing_merchant} unknown merchants · {quality.missing_city} unknown cities · {quality.missing_category} uncategorized · {quality.enrichment_fallback} enrichment fallbacks · {quality.unassigned_account} without an account
     </div>
     <p>{quality.coverage_note}</p>
+    {locationGuidance && quality.missing_city > 0 && <p>
+      City-based answers may be incomplete because some transactions have no city recorded. In <Link to="/transactions">transactions</Link>, open a transaction and choose “Edit merchant, city, or type” to add a city when you know it.
+    </p>}
   </aside>;
 }
