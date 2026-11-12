@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { getInsights } from "../api/client";
+import { api, getInsights } from "../api/client";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import { transactionFiltersUrl } from "../api/transactionFilters";
-import { monthlyAverageRange, monthlyAverageRangeError, readMonthlyAverageResponse } from "../api/reliabilityHelpers";
+import { monthlyAverageRange, monthlyAverageRangeError } from "../api/reliabilityHelpers";
 import { useSpendingRange } from "../components/spendingRange";
 
 const SECTION = {
@@ -48,10 +48,10 @@ export function Insights() {
     setAvgLoading(true);
     setAvgError(null);
     const params = avgDateFrom && avgDateTo
-      ? `date_from=${avgDateFrom}&date_to=${avgDateTo}`
-      : `months=${avgMonths}`;
-    fetch(`http://localhost:8000/analysis/monthly-averages?${params}`)
-      .then(readMonthlyAverageResponse)
+      ? { date_from: avgDateFrom, date_to: avgDateTo }
+      : { months: avgMonths };
+    api.get("/analysis/monthly-averages", { params })
+      .then((response) => response.data)
       .then((result) => { if (active) setAvgData(result); })
       .catch(() => { if (active) { setAvgData(null); setAvgError("Failed to load averages. Please check the date range and try again."); } })
       .finally(() => { if (active) setAvgLoading(false); });

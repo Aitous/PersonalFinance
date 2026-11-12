@@ -82,12 +82,15 @@ export default function Reports() {
   const drilldownTrigger = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
+    let active = true;
     setLoading(true);
     setError(null);
+    setReport(null);
     getMonthlyReport(year, month)
-      .then(setReport)
-      .catch(() => setError("Failed to load report."))
-      .finally(() => setLoading(false));
+      .then((result) => { if (active) setReport(result); })
+      .catch(() => { if (active) setError("Failed to load report."); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
   }, [year, month, reloadToken]);
 
   useEffect(() => {
@@ -108,11 +111,6 @@ export default function Reports() {
           setCategoryExplanationResult(result);
           return;
         }
-        setCategoryExplanationLoading(true);
-        generateCategoryExplanations(year, month, categoryComparison)
-          .then((generated) => { if (active) setCategoryExplanationResult(generated); })
-          .catch(() => { if (active) setCategoryExplanationError("Could not explain the category changes. Check your AI provider settings and try again."); })
-          .finally(() => { if (active) setCategoryExplanationLoading(false); });
       })
       .catch(() => { if (active) setCategoryExplanationError("Could not check for saved explanations."); })
       .finally(() => { if (active) setCategoryExplanationChecking(false); });
@@ -401,7 +399,7 @@ export default function Reports() {
                         <small>{categoryComparison === "recent3" ? `vs ${recentWindowLabel} average` : "vs prior month"}</small>
                         {!categoryExplanationResult && (categoryExplanationLoading || categoryExplanationChecking
                           ? <small role="status">{categoryExplanationLoading ? "Generating explanations…" : "Loading saved explanations…"}</small>
-                          : categoryExplanationError && <><small role="alert">AI explanation unavailable.</small><button type="button" onClick={handleGenerateCategoryExplanations}>Retry explanations</button></>)}
+                          : <><button type="button" onClick={handleGenerateCategoryExplanations}>{categoryExplanationError ? "Retry explanations" : "Generate explanations"}</button>{categoryExplanationError && <small role="alert">AI explanation unavailable.</small>}</>)}
                       </th>
                     </tr></thead>
                     <tbody>{report.categories.map((category) => (
@@ -456,7 +454,7 @@ export default function Reports() {
                               : Math.abs(delta) < 0.01 ? <span className="monthly-report-explanation-muted">No material difference</span>
                                 : categoryExplanationError ? <span className="monthly-report-explanation-muted">Explanation unavailable</span>
                                   : categoryExplanationResult ? <span className="monthly-report-explanation-muted">No clear driver identified</span>
-                                    : <span aria-label="Explanation is loading" />}
+                                    : <span className="monthly-report-explanation-muted">Generate explanations to see potential drivers</span>}
                           </td>
                         </tr>;
                       })()

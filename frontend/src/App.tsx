@@ -69,7 +69,7 @@ function Application() {
     <p className="auth-eyebrow">PRIVACY CHOICE</p><h1>Before using AI</h1>
     <p>When you use an AI feature, the app sends the transaction details needed for that request to the model provider configured by the service. The app records the feature, model, time, and request count to enforce your allowance; it does not save prompts or transaction text in its AI usage log. Provider handling is subject to that provider’s terms.</p>
     {consentError && <p role="alert">{consentError}</p>}
-    {consentError && <button type="button" onClick={() => { setConsentError(""); void getAIConsent().then((result) => setConsent(result.accepted)).catch(() => setConsentError("Could not check your AI privacy preference. Try again.")); }}>Retry</button>}
+    {consentError && <button type="button" onClick={() => { setConsentError(""); void getAIConsent().then((result) => { setConsent(result.accepted); setShowConsentPrompt(!result.accepted); }).catch(() => setConsentError("Could not check your AI privacy preference. Try again.")); }}>Retry</button>}
     <button disabled={consentSaving} onClick={() => {
       consentSubmissionStarted.current = true;
       setConsentSaving(true);

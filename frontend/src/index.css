@@ -265,7 +265,7 @@ input::placeholder, textarea::placeholder { color: #738094; opacity: 1; }
     padding: 10px 12px 8px; overflow: visible; box-shadow: 0 2px 8px rgba(18,26,43,.16);
   }
   .app-brand { padding: 2px 8px 9px; font-size: 16px; }
-  .app-sidebar nav { display: flex; gap: 5px; overflow-x: auto; scrollbar-width: thin; }
+  .app-sidebar nav { display: flex; flex-wrap: wrap; gap: 5px; }
   .app-nav-link { flex: 0 0 auto; min-height: 40px; gap: 7px; margin: 0; padding: 8px 10px; font-size: 13px; }
   .app-main { min-height: calc(100vh - 100px); min-height: calc(100dvh - 100px); padding: 20px 15px 28px; }
   .app-main table { min-width: 650px; }
