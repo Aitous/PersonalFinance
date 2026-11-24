@@ -270,10 +270,17 @@ def _preview_payload(bank: str, account_id: Optional[str], filename: str, conten
         return parsed, result, ambiguous_ids
 
 
+async def _read_uploaded_csv(file: UploadFile) -> bytes:
+    content = await file.read(MAX_INBOX_FILE_BYTES + 1)
+    if len(content) > MAX_INBOX_FILE_BYTES:
+        raise HTTPException(status_code=413, detail="CSV files must be 25 MiB or smaller.")
+    return content
+
+
 @router.post("/import/preview")
 async def preview_csv(bank: str = Form(...), account_id: Optional[str] = Form(None), file: UploadFile = File(...)):
     try:
-        _, result, _ = _preview_payload(bank, account_id, file.filename or "upload.csv", await file.read())
+        _, result, _ = _preview_payload(bank, account_id, file.filename or "upload.csv", await _read_uploaded_csv(file))
         return {**result, "tx_count": result["new_transactions"], "total_parsed": result["parsed_rows"]}
     except HTTPException:
         raise
@@ -455,7 +462,7 @@ async def upload_csv(background_tasks: BackgroundTasks, bank: str = Form(...), a
     if bank not in BANK_SCHEMAS:
         raise HTTPException(status_code=400, detail=f"Unknown bank '{bank}'. Valid: {list(BANK_SCHEMAS.keys())}")
 
-    content = await file.read()
+    content = await _read_uploaded_csv(file)
     try:
         parsed, summary, ambiguous_ids = _preview_payload(bank, account_id, file.filename or "upload.csv", content)
     except Exception as e:

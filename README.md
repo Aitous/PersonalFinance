@@ -19,8 +19,8 @@ A personal finance dashboard with local development and an invite-only hosted mo
 
 - Python 3.11+
 - Node.js 18+
-- A Gemini API key (Google AI Studio — [get one free](https://aistudio.google.com/app/apikey))
-- Optionally an Anthropic API key for Claude-based savings tips
+- Your own API key for a supported AI provider if you want to use AI features
+- Your own Plaid credentials if you want to connect accounts; CSV import is an alternative
 
 ## Setup
 
@@ -49,7 +49,7 @@ cd ..
 
 ### 4. Configure your LLM API key
 
-Start the backend once to initialize the database, then open Settings in the app and save your Gemini (or Anthropic) API key. Keys are stored in macOS Keychain and never written to disk.
+Start the backend once to initialize the database, then open Settings in the app and save your own OpenAI, Gemini, or Anthropic API key. In local mode the app uses the configured system keyring; its storage and security depend on your operating system and keyring backend. AI requests can incur provider charges and send relevant transaction details to that provider. Hosted mode uses credentials configured by the service operator, not per-user keys.
 
 Alternatively, set them directly via the API:
 
@@ -58,6 +58,10 @@ curl -X POST http://localhost:8000/settings/llm \
   -H "Content-Type: application/json" \
   -d '{"provider": "gemini", "api_key": "YOUR_KEY"}'
 ```
+
+## Local security boundary
+
+Local mode is intended for one trusted user on one machine. Its API does not require authentication; do not expose the API or development server to your network or the internet. Run the backend on the loopback address (`127.0.0.1`) and protect the computer, local database, exports, backups, and OS user account. CORS is not authentication and does not protect an exposed API. A multi-user deployment requires the separately configured hosted authentication and database isolation; it should receive a security review before public use.
 
 ## Running
 

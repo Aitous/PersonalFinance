@@ -32,3 +32,16 @@ frontend/dist/
 
 # Environment
 .env
+
+# Local secrets, financial data, and UI captures
+.env.*
+!.env.example
+*.db.*
+*.sqlite
+*.sqlite3
+*.sqlite-*
+.hallmark/
+.impeccable/
+.playwright-cli/
+.taste-skill/
+insights-*.png
